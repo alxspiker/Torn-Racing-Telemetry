@@ -1,4 +1,4 @@
-# 🏎️ Torn Racing Telemetry
+# 🏎️ Torn Racing Suite
 
 > Enhance your Torn racing experience with real-time telemetry, detailed stats, and race history tracking
 
@@ -7,7 +7,10 @@
 ## 📋 Table of Contents
 
 - [Overview](#overview)
-- [Key Features](#key-features)
+- [Components](#components)
+- [Telemetry Features](#telemetry-features)
+- [Stats Tracking Features](#stats-tracking-features)
+- [Race Log Features](#race-log-features)
 - [Telemetry in Action](#telemetry-in-action)
 - [Interface Controls](#interface-controls)
 - [Settings Panel](#settings-panel)
@@ -21,21 +24,43 @@
 
 ## Overview
 
-Torn Racing Telemetry is a userscript that enhances the racing feature in Torn with real-time telemetry data, racing statistics history, and detailed race information. It provides valuable insights into your racing performance and helps you track your progress over time.
+Torn Racing Suite is a collection of userscripts that enhance the racing feature in Torn with real-time telemetry data, racing statistics history, and detailed race information. It provides valuable insights into your racing performance and helps you track your progress over time.
 
-The script seamlessly integrates with the Torn racing interface, providing valuable data without disrupting your racing experience. By displaying real-time speed and acceleration information, you can better understand your car's performance and make more informed racing decisions.
+The suite consists of three separate but complementary scripts that seamlessly integrate with the Torn racing interface, providing valuable data without disrupting your racing experience.
 
 ---
 
-## Key Features
+## Components
 
-| 📊 **Real-time Telemetry** | 📈 **Stats History** | 🏁 **Race Logs** |
-|:--------------------------|:---------------------|:-----------------|
-| View real-time speed and acceleration data for all drivers in the race. See how your car performs against the competition. | Track changes in your racing skill, points, and race participation over time. Monitor your progress. | Keep detailed records of your recent races, including track information, positions, and performance. |
+| Script | Description | Main Purpose |
+|:-------|:------------|:-------------|
+| **Racing Telemetry** | Provides real-time speed and acceleration data during races | Monitor live performance metrics |
+| **Stats Tracker** | Tracks your racing skill, points, and race statistics over time | Track long-term progress |
+| **Race Log Enhancer** | Keeps detailed records of your races and tracks with comprehensive information | Analyze race history and track stats |
 
-| 🔧 **Customizable Display** | 🎨 **Visual Enhancements** | 🏎️ **Car Information** |
-|:---------------------------|:--------------------------|:------------------------|
-| Configure telemetry display to show speed, acceleration, or both. Choose your preferred units. | Color-coded acceleration values and smooth animations provide intuitive visual feedback. | View detailed information about your current car, including stats and performance metrics. |
+---
+
+## Telemetry Features
+
+| 📊 **Real-time Telemetry** | 🔧 **Customizable Display** | 🎨 **Visual Enhancements** |
+|:--------------------------|:---------------------------|:--------------------------|
+| View real-time speed and acceleration data for all drivers in the race. See how your car performs against the competition. | Configure telemetry display to show speed, acceleration, or both. Choose your preferred units. | Color-coded acceleration values and smooth animations provide intuitive visual feedback. |
+
+---
+
+## Stats Tracking Features
+
+| 📈 **Stats History** | 📊 **Progress Tracking** | 🏆 **Performance Metrics** |
+|:---------------------|:------------------------|:--------------------------|
+| Track changes in your racing skill, points, and race participation over time. | Monitor your improvement with detailed history entries showing gains/losses. | View your win rate and other performance statistics over time. |
+
+---
+
+## Race Log Features
+
+| 🏁 **Race Logs** | 🏎️ **Track Statistics** | 📋 **Race Details** |
+|:-----------------|:------------------------|:-------------------|
+| Keep detailed records of your recent races, including track information, positions, and performance. | View statistics for each track including your best times and win rates. | See comprehensive race information including participants, positions, and timing. |
 
 ---
 
@@ -61,7 +86,7 @@ The telemetry display shows real-time information next to each driver's name dur
 
 ## Interface Controls
 
-The script adds a control panel to the racing interface with three main buttons:
+The suite adds a control panel to the racing interface with three main buttons:
 
 ```
 ┌─────────────────────────────────────────────────────┐
@@ -241,7 +266,7 @@ For each race, the panel displays:
 
 ## Installation
 
-To install the Torn Racing Telemetry userscript, follow these steps:
+To install the Torn Racing Suite, follow these steps:
 
 ### 1. Install a Userscript Manager
 
@@ -251,15 +276,17 @@ First, you need to install a userscript manager extension for your browser:
 - For Firefox: [Tampermonkey](https://addons.mozilla.org/en-US/firefox/addon/tampermonkey/)
 - For Edge: [Tampermonkey](https://microsoftedge.microsoft.com/addons/detail/tampermonkey/iikmkjmpaadaobahmlepeloendndfphd)
 
-### 2. Install the Script
+### 2. Install the Scripts
 
-Click on this installation link to add the script to your userscript manager:
+Click on these installation links to add the scripts to your userscript manager:
 
-[Install Torn Racing Telemetry from Greasyfork](https://greasyfork.org/en/scripts/522245-torn-racing-telemetry)
+- [Install Torn Racing Telemetry](https://greasyfork.org/en/scripts/522245-torn-racing-telemetry)
+- [Install Torn Racing Stats Tracker](https://greasyfork.org/en/scripts/522246-torn-racing-stats-tracker)
+- [Install Torn Racing Log Enhancer](https://greasyfork.org/en/scripts/522247-torn-racing-log-enhancer)
 
-Alternatively, you can copy the script code and manually create a new script in your userscript manager.
+Alternatively, you can copy the script code and manually create new scripts in your userscript manager.
 
-### 3. Configure the Script
+### 3. Configure the Scripts
 
 After installation:
 
@@ -272,13 +299,14 @@ After installation:
 
 ## Usage Guide
 
-Here's how to use the Torn Racing Telemetry script effectively:
+Here's how to use the Torn Racing Suite effectively:
 
 ### Basic Usage
 
-- The telemetry information will automatically appear next to driver names during races
-- Use the control panel buttons at the top of the racing page to access settings, stats history, and race logs
-- The telemetry display can be temporarily hidden using the "Hide Telemetry" button in settings
+- **Telemetry:** Real-time telemetry information will automatically appear next to driver names during races
+- **Stats History:** Access your racing stats history by clicking the "Stats History" button 
+- **Race Logs:** View your race history and track information by clicking the "Recent Races" button
+- **Settings:** Configure display options and API integration using the "Settings" button
 
 ### Racing Strategy
 
@@ -299,11 +327,11 @@ Here's how to use the Torn Racing Telemetry script effectively:
 
 ### Does this script violate Torn's rules?
 
-No, this script only enhances the user interface and uses the official Torn API for data retrieval. It doesn't automate gameplay or provide unfair advantages.
+No, these scripts only enhance the user interface and use the official Torn API for data retrieval. They don't automate gameplay or provide unfair advantages.
 
-### Is my API key safe to use with this script?
+### Is my API key safe to use with these scripts?
 
-Yes, your API key is stored locally in your browser and is only used to fetch data from Torn's official API. The script doesn't transmit your key to any third-party servers.
+Yes, your API key is stored locally in your browser and is only used to fetch data from Torn's official API. The scripts don't transmit your key to any third-party servers.
 
 ### Why do I need to provide an API key?
 
@@ -313,24 +341,29 @@ The API key is required to fetch your racing statistics and race history from To
 
 The telemetry data is calculated based on changes in progress percentage and timing information. While it provides a good approximation, it's not as precise as actual in-game physics calculations. It's most useful for relative comparisons and trend analysis.
 
-### The script isn't working after an update. What should I do?
+### Do I need to install all three scripts?
+
+No, each script functions independently. You can choose to install only the features you're interested in:
+- If you only want real-time racing data, install just the Telemetry script
+- If you're only interested in tracking your stats, install just the Stats Tracker
+- If you only want detailed race logs, install just the Race Log Enhancer
+
+### The scripts aren't working after an update. What should I do?
 
 Try these troubleshooting steps:
 1. Refresh the page
 2. Clear your browser cache
 3. Click the "Reset System" button in the Settings panel
-4. Reinstall the script from Greasyfork
+4. Reinstall the scripts from Greasyfork
 
 ---
 
 <div align="center">
 
-### Torn Racing Telemetry
+### Torn Racing Suite
 
-This userscript is provided under the MIT License. It is not affiliated with or endorsed by Torn.
+These userscripts are provided under the MIT License. They are not affiliated with or endorsed by Torn.
 
-For updates, bug reports, or feature requests, please visit the script's Greasyfork page.
-
-[View on Greasyfork](https://greasyfork.org/en/scripts/522245-torn-racing-telemetry)
+For updates, bug reports, or feature requests, please visit the scripts' Greasyfork pages.
 
 </div>
