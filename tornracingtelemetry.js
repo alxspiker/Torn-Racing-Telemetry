@@ -1,905 +1,150 @@
 // ==UserScript==
 // @name         Torn Racing Telemetry
 // @namespace    https://www.torn.com/profiles.php?XID=2782979
-// @version      2.5.2
-// @description  Enhances Torn Racing with real-time speed and acceleration telemetry
+// @version      3.0.1
+// @description  Enhanced Torn Racing UI: Telemetry, driver stats, advanced stats panel.
 // @match        https://www.torn.com/page.php?sid=racing*
 // @match        https://www.torn.com/loader.php?sid=racing*
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @grant        GM_addStyle
+// @connect      api.torn.com
 // @license      MIT
 // ==/UserScript==
 
 (function() {
     'use strict';
 
-    if (window.racingTelemetryCoreHasRun) return;
-    window.racingTelemetryCoreHasRun = true;
+    if (window.racingCustomUITelemetryHasRun) return;
+    window.racingCustomUITelemetryHasRun = true;
 
-    // Add styles
-    GM_addStyle(`
-        :root {
-            --text-color: #e0e0e0;
-            --background-dark: #1a1a1a;
-            --background-light: #2a2a2a;
-            --border-color: #404040;
-            --accent-color: #64B5F6;
-            --primary-color: #4CAF50;
-        }
-        
-        .telemetry-button-container {
-            display: flex;
-            width: 100%;
-            margin: 0 0 10px;
-            border-radius: 6px;
-            overflow: hidden;
-            background: var(--background-dark);
-            border: 1px solid var(--border-color);
-        }
-        
-        .telemetry-button {
-            flex-grow: 1;
-            background: transparent;
-            color: var(--text-color);
-            border: none;
-            padding: 12px 15px;
-            text-align: center;
-            cursor: pointer;
-            transition: background-color 0.2s ease, color 0.2s ease;
-            font-size: 15px;
-        }
-        
-        .telemetry-button:hover {
-            background-color: var(--background-light);
-            color: var(--accent-color);
-        }
-        
-        .telemetry-button:active {
-            background-color: var(--accent-color);
-            color: var(--background-dark);
-        }
-        
-        .telemetry-hidden .driver-status {
-            display: none;
-        }
-        
-        .driver-status {
-            flex: 0 0 auto;
-            margin-left: auto;
-            font-size: 11px;
-            background: rgba(0,0,0,0.3);
-            padding: 2px 6px;
-            border-radius: 3px;
-            white-space: nowrap;
-            transition: color 0.5s ease, opacity 0.3s ease;
-        }
-        
-        #leaderBoard .driver-item .name {
-            display: flex !important;
-            align-items: center;
-            min-width: 0;
-            padding-right: 10px !important;
-        }
-        
-        #leaderBoard .driver-item .name > span:first-child {
-            flex: 1 1 auto;
-            min-width: 0;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-            padding-right: 8px;
-        }
-        
-        .settings-popup {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0, 0, 0, 0.7);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            z-index: 999;
-            backdrop-filter: blur(3px);
-        }
-        
-        .settings-popup-content {
-            background: var(--background-dark);
-            border-radius: 10px;
-            border: 1px solid var(--border-color);
-            width: 90%;
-            max-width: 500px;
-            max-height: 90vh;
-            overflow-y: auto;
-            padding: 20px;
-            box-shadow: 0 5px 20px rgba(0, 0, 0, 0.3);
-        }
-        
-        .settings-title {
-            color: var(--primary-color);
-            font-size: 20px;
-            font-weight: bold;
-            margin-bottom: 15px;
-            padding-bottom: 10px;
-            border-bottom: 1px solid var(--border-color);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        
-        .settings-close {
-            background: var(--background-light);
-            color: var(--text-color);
-            border: none;
-            border-radius: 4px;
-            padding: 8px 15px;
-            cursor: pointer;
-            transition: all 0.2s ease;
-        }
-        
-        .settings-close:hover {
-            background: var(--accent-color);
-            color: var(--background-dark);
-        }
-        
-        .settings-item {
-            margin-bottom: 20px;
-            display: flex;
-            flex-direction: column;
-        }
-        
-        .settings-item label {
-            margin-bottom: 8px;
-            color: var(--text-color);
-            font-weight: bold;
-        }
-        
-        .settings-item select, .toggle-wrapper {
-            padding: 8px;
-            background: var(--background-light);
-            border: 1px solid var(--border-color);
-            border-radius: 4px;
-            color: var(--text-color);
-        }
-        
-        .settings-buttons {
-            display: flex;
-            justify-content: space-between;
-            margin-top: 20px;
-        }
-        
-        .settings-btn {
-            padding: 10px 15px;
-            border-radius: 4px;
-            border: none;
-            cursor: pointer;
-            background: var(--background-light);
-            color: var(--text-color);
-            transition: all 0.2s ease;
-        }
-        
-        .settings-btn:hover {
-            background: var(--accent-color);
-            color: var(--background-dark);
-        }
-        
-        .settings-btn.primary {
-            background: var(--primary-color);
-            color: white;
-        }
-        
-        .settings-btn.primary:hover {
-            background: #388E3C;
-        }
-        
-        /* Toggle switch */
-        .switch {
-            position: relative;
-            display: inline-block;
-            width: 45px;
-            height: 24px;
-        }
-        
-        .switch input {
-            opacity: 0;
-            width: 0;
-            height: 0;
-        }
-        
-        .slider {
-            position: absolute;
-            cursor: pointer;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background-color: #4d4d4d;
-            transition: .3s;
-            border-radius: 12px;
-        }
-        
-        .slider:before {
-            position: absolute;
-            content: "";
-            height: 20px;
-            width: 20px;
-            left: 3px;
-            bottom: 2px;
-            background-color: #f4f4f4;
-            transition: .3s;
-            border-radius: 50%;
-        }
-        
-        input:checked + .slider {
-            background-color: var(--primary-color);
-        }
-        
-        input:checked + .slider:before {
-            transform: translateX(21px);
-        }
-        
-        .notification {
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            background-color: var(--primary-color);
-            color: white;
-            padding: 10px 20px;
-            border-radius: 4px;
-            box-shadow: 0 3px 10px rgba(0,0,0,0.3);
-            z-index: 1000;
-            opacity: 0;
-            transition: opacity 0.3s;
-        }
-        
-        @media (max-width: 480px) {
-            .telemetry-button-container {
-                flex-direction: column;
-                margin: 0 5px 10px;
-                border-radius: 8px;
-            }
-            
-            .telemetry-button {
-                border-radius: 0;
-            }
-            
-            .telemetry-button:not(:last-child) {
-                border-bottom: 1px solid var(--border-color);
-            }
-            
-            #leaderBoard .driver-item .name {
-                padding-right: 5px !important;
-            }
-            
-            .driver-status {
-                font-size: 10px;
-                padding: 1px 4px;
-                margin-left: 4px;
-            }
-        }
-    `);
-
-    // Configuration management
     const Config = {
         defaults: {
-            displayMode: 'speed',    // 'speed', 'acceleration', or 'both'
-            colorCode: true,         // Whether to color-code the telemetry
-            animateChanges: true,    // Whether to animate changes in telemetry
-            speedUnit: 'mph',        // 'mph' or 'kmh'
-            minUpdateInterval: 500,  // Minimum update interval in ms
-            telemetryVisible: true   // Whether telemetry is visible
+            displayMode: 'speed', apiKey: '', colorCode: true, animateChanges: true, speedUnit: 'mph',
+            minUpdateInterval: 300, telemetryVisible: true, hideOriginalList: true, showLapEstimate: true,
+            lapEstimateSmoothingFactor: 0.15, fetchApiStatsOnClick: true,
+            historicalRaceLimit: 20
         },
-        
         data: {},
-        
-        load() {
-            try {
-                this.data = {...this.defaults, ...JSON.parse(GM_getValue('racingTelemetryCoreConfig', '{}'))};
-            } catch (e) {
-                console.error("Error loading config:", e);
-                this.data = {...this.defaults};
-            }
-            return this.data;
-        },
-        
-        save() { 
-            GM_setValue('racingTelemetryCoreConfig', JSON.stringify(this.data)); 
-        },
-        
-        get(key) { 
-            return this.data[key]; 
-        },
-        
-        set(key, value) { 
-            this.data[key] = value; 
-            this.save(); 
-        }
+        load() { try { this.data = {...this.defaults, ...JSON.parse(GM_getValue('racingCustomUITelemetryConfig_v2.3.6', '{}'))}; } catch (e) { this.data = {...this.defaults}; } return this.data; },
+        save() { GM_setValue('racingCustomUITelemetryConfig_v2.3.6', JSON.stringify(this.data)); },
+        get(key) { return this.data[key]; },
+        set(key, value) { this.data[key] = value; this.save(); }
     };
+    Config.load();
 
-    // Application state
     const State = {
-        previousMetrics: {},
-        trackInfo: { laps: 5, length: 3.4, get total() { return this.laps * this.length; } },
-        observers: [],
-        lastUpdateTimes: {},
-        periodicCheckIntervalId: null,
-        
-        resetRace() {
-            this.previousMetrics = {};
-            this.trackInfo = { laps: 5, length: 3.4, get total() { return this.laps * this.length; } };
-            clearInterval(this.periodicCheckIntervalId);
-            this.periodicCheckIntervalId = null;
-            this.observers.forEach(obs => obs.disconnect());
-            this.observers = [];
-            this.lastUpdateTimes = {};
-        }
+        userId: null, previousMetrics: {},
+        trackInfo: { id: null, name: null, laps: 5, length: 3.4, get total() { return this.laps * this.length; } },
+        observers: [], lastUpdateTimes: {}, periodicCheckIntervalId: null, isUpdating: false,
+        customUIContainer: null, originalLeaderboard: null, settingsPopupInstance: null, advancedStatsPanelInstance: null,
+        trackNameMap: null, carBaseStatsMap: null, currentRaceClass: null,
+        isInitialized: false, isRaceViewActive: false,
+        resetRaceState() { this.previousMetrics = {}; this.lastUpdateTimes = {}; if (this.periodicCheckIntervalId) clearInterval(this.periodicCheckIntervalId); this.periodicCheckIntervalId = null; document.querySelectorAll('.custom-driver-item[data-stats-loaded]').forEach(el => { el.removeAttribute('data-stats-loaded'); el.querySelectorAll('.api-stat').forEach(span => span.textContent = '...'); el.querySelector('.api-stats-container')?.classList.remove('error', 'loaded', 'no-key'); }); },
+        clearPopupsAndFullReset() { this.resetRaceState(); this.settingsPopupInstance?.remove(); this.settingsPopupInstance = null; this.advancedStatsPanelInstance?.remove(); this.advancedStatsPanelInstance = null; this.trackInfo = { id: null, name: null, laps: 5, length: 3.4, get total() { return this.laps * this.length; } }; this.currentRaceClass = null; this.trackNameMap = null; this.carBaseStatsMap = null; this.isInitialized = false; }
     };
 
-    // Utility functions
-    const Utils = {
-        convertSpeed(speed, unit) { 
-            return unit === 'kmh' ? speed * 1.60934 : speed; 
-        },
-        
-        formatTime(seconds) {
-            const min = Math.floor(seconds / 60);
-            const sec = Math.floor(seconds % 60);
-            return `${min}:${sec < 10 ? '0' : ''}${sec}`;
-        },
-        
-        parseTime(timeString) {
-            if (!timeString?.includes(':')) return 0;
-            const parts = timeString.split(':');
-            if (parts.length === 2) {
-                return (parseInt(parts[0], 10) || 0) * 60 + (parseFloat(parts[1]) || 0);
-            }
-            return 0;
-        },
-        
-        parseProgress(text) {
-            const match = text?.match(/(\d+\.?\d*)%/);
-            return match ? parseFloat(match[1]) : 0;
-        },
-        
-        showNotification(message, type = 'info') {
-            const notif = document.createElement('div');
-            notif.style.cssText = `
-                position: fixed;
-                bottom: 20px;
-                right: 20px;
-                background: ${type === 'error' ? '#f44336' : type === 'success' ? '#4CAF50' : '#2196F3'};
-                color: white;
-                padding: 12px 20px;
-                border-radius: 4px;
-                box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-                z-index: 9999;
-                font-size: 14px;
-                opacity: 0;
-                transition: opacity 0.3s;
-            `;
-            notif.textContent = message;
-            document.body.appendChild(notif);
-            
-            // Fade in
-            setTimeout(() => notif.style.opacity = '1', 10);
-            
-            // Fade out and remove
-            setTimeout(() => {
-                notif.style.opacity = '0';
-                setTimeout(() => notif.remove(), 300);
-            }, 3000);
-        }
-    };
+    GM_addStyle(`
+        :root { --text-color: #e0e0e0; --background-dark: #1a1a1a; --background-light: #2a2a2a; --border-color: #404040; --accent-color: #64B5F6; --primary-color: #4CAF50; --telemetry-default-color: rgb(136, 136, 136); --telemetry-accel-color: rgb(76, 175, 80); --telemetry-decel-color: rgb(244, 67, 54); --details-bg: #2f2f2f; --self-highlight-bg: #2a3a2a; --self-highlight-border: #4CAF50; --api-loading-color: #aaa; --api-error-color: #ff8a80; --api-info-color: #64B5F6; --table-header-bg: #333; --table-row-alt-bg: #222; }
+        #drivers-scrollbar { display: ${Config.get('hideOriginalList') ? 'none !important' : 'block'}; }
+        #custom-driver-list-container { margin-top: 10px; border: 1px solid var(--border-color); border-radius: 5px; background-color: var(--background-dark); color: var(--text-color); padding: 0; max-height: 450px; overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; scrollbar-color: #555 var(--background-dark); position: relative; }
+        #custom-driver-list-container::-webkit-scrollbar { width: 8px; } #custom-driver-list-container::-webkit-scrollbar-track { background: var(--background-dark); border-radius: 4px; } #custom-driver-list-container::-webkit-scrollbar-thumb { background-color: #555; border-radius: 4px; border: 2px solid var(--background-dark); }
+        .custom-driver-item { display: flex; padding: 6px 8px; border-bottom: 1px solid var(--border-color); cursor: pointer; transition: background-color 0.2s ease; position: relative; flex-direction: column; align-items: stretch; }
+        .driver-info-row { display: flex; align-items: center; width: 100%; }
+        .custom-driver-item:last-child { border-bottom: none; } .custom-driver-item:hover { background-color: var(--background-light); } .custom-driver-item.is-self { background-color: var(--self-highlight-bg); border-left: 3px solid var(--self-highlight-border); padding-left: 5px; } .custom-driver-item.is-self:hover { background-color: #3a4a3a; }
+        .driver-color-indicator { width: 10px; height: 20px; margin-right: 8px; border-radius: 3px; flex-shrink: 0; } .driver-car-img { width: 38px; height: 19px; margin-right: 8px; object-fit: contain; flex-shrink: 0; } .driver-name { flex-grow: 1; font-weight: bold; margin-right: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 100px; } .driver-name .self-tag { color: #90EE90; font-weight: normal; margin-left: 4px; }
+        .driver-telemetry-display { font-size: 0.85em; color: var(--telemetry-default-color); margin-left: auto; flex-shrink: 0; padding: 2px 6px; background: rgba(0,0,0,0.2); border-radius: 3px; white-space: nowrap; min-width: 70px; text-align: right; transition: color 0.3s ease, background-color 0.3s ease, opacity 0.3s ease; opacity: 1; }
+        .driver-telemetry-display .lap-estimate { font-size: 0.9em; opacity: 0.7; margin-left: 4px; } body.telemetry-hidden .driver-telemetry-display { opacity: 0; pointer-events: none; min-width: 0; padding: 0; }
+        .driver-details { width: 100%; background-color: var(--details-bg); margin-top: 6px; padding: 0 10px; box-sizing: border-box; max-height: 0; opacity: 0; overflow: hidden; border-radius: 4px; color: #bbb; font-size: 0.9em; transition: max-height 0.4s ease-out, opacity 0.3s ease-in, padding-top 0.4s ease-out, padding-bottom 0.4s ease-out, margin-top 0.4s ease-out; }
+        .driver-details p { margin: 5px 0; line-height: 1.4; } .driver-details strong { color: #ddd; } .driver-details a { color: var(--accent-color); text-decoration: none; } .driver-details a:hover { text-decoration: underline; } .custom-driver-item.details-visible .driver-details { max-height: 350px; opacity: 1; padding-top: 8px; padding-bottom: 8px; margin-top: 6px; }
+        .api-stats-container { border-top: 1px dashed var(--border-color); margin-top: 8px; padding-top: 8px; } .api-stats-container.loading .api-stat { color: var(--api-loading-color); font-style: italic; } .api-stats-container.error .api-stat-error-msg, .api-stats-container.no-key .api-stat-error-msg { color: var(--api-error-color); display: block; font-style: italic; } .api-stats-container.no-key .api-stat-error-msg { color: var(--api-info-color); } .api-stat-error-msg { display: none; } .api-stats-container p { margin: 3px 0; } .api-stat { font-weight: bold; color: var(--text-color); }
+        .telemetry-controls-container { margin: 10px 0 5px 0; display: flex; justify-content: flex-end; gap: 5px; }
+        .telemetry-stats-button, .telemetry-settings-button { background: var(--background-light); color: var(--text-color); border: 1px solid var(--border-color); padding: 6px 12px; text-align: center; cursor: pointer; transition: all 0.2s ease; font-size: 13px; border-radius: 4px; }
+        .telemetry-stats-button:hover, .telemetry-settings-button:hover { background-color: var(--accent-color); color: var(--background-dark); }
+        .settings-popup, .stats-panel { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.7); display: flex; justify-content: center; align-items: center; z-index: 1000; backdrop-filter: blur(3px); }
+        .stats-panel { z-index: 1010; scrollbar-width: thin; scrollbar-color: #555 var(--background-dark); }
+        .settings-popup-content, .stats-panel-content { background: var(--background-dark); border-radius: 10px; border: 1px solid var(--border-color); width: 90%; max-height: 90vh; overflow-y: auto; padding: 20px; box-shadow: 0 5px 20px rgba(0, 0, 0, 0.3); }
+        .settings-popup-content { max-width: 500px; }
+        .stats-panel-content { max-width: 800px; }
+        .settings-title, .stats-title { font-size: 20px; font-weight: bold; margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; }
+        .settings-title { color: var(--primary-color); }
+        .stats-title { color: var(--accent-color); }
+        .settings-close, .stats-close { background: var(--background-light); color: var(--text-color); border: none; border-radius: 4px; padding: 8px 15px; cursor: pointer; transition: all 0.2s ease; } .settings-close:hover, .stats-close:hover { background: var(--accent-color); color: var(--background-dark); }
+        .settings-content, .stats-content { padding-top: 10px; }
+        .stats-content { font-size: 0.9em; } .stats-content h3 { color: var(--primary-color); margin-top: 20px; margin-bottom: 10px; padding-bottom: 5px; border-bottom: 1px dashed var(--border-color); font-size: 1.2em; } .stats-content h3:first-child { margin-top: 0; } .stats-content h4 { color: var(--accent-color); margin-top: 15px; margin-bottom: 8px; font-size: 1.1em; } .stats-content p { margin: 5px 0 10px 0; line-height: 1.5; color: #ccc; } .stats-content strong { color: var(--text-color); } .stats-content .loading-msg, .stats-content .error-msg, .stats-content .info-msg { padding: 10px; border-radius: 4px; margin: 15px 0; text-align: center; } .stats-content .loading-msg { background-color: rgba(170, 170, 170, 0.2); color: var(--api-loading-color); } .stats-content .error-msg { background-color: rgba(255, 138, 128, 0.2); color: var(--api-error-color); } .stats-content .info-msg { background-color: rgba(100, 181, 246, 0.2); color: var(--api-info-color); } .stats-content table { width: 100%; border-collapse: collapse; margin-top: 10px; margin-bottom: 20px; font-size: 0.95em; } .stats-content th, .stats-content td { border: 1px solid var(--border-color); padding: 6px 8px; text-align: left; } .stats-content th { background-color: var(--table-header-bg); font-weight: bold; color: var(--text-color); } .stats-content tr:nth-child(even) { background-color: var(--table-row-alt-bg); } .stats-content td.numeric, .stats-content th.numeric { text-align: right; } .stats-content .stat-label { color: #bbb; } .stats-content .stat-value { font-weight: bold; color: var(--text-color); } .stats-content .car-stats-inline { font-size: 0.8em; color: #aaa; } .stats-content .car-stats-inline strong { color: #bbb; } .stats-content .user-car-highlight { background-color: rgba(76, 175, 80, 0.15); } .stats-content a { color: var(--accent-color); text-decoration: none; } .stats-content a:hover { text-decoration: underline; }
+        .stats-content td { color: var(--text-color); padding: 2px !important; }
+        .settings-item { margin-bottom: 20px; display: flex; flex-direction: column; } .settings-item label:not(.switch) { margin-bottom: 8px; color: var(--text-color); font-weight: bold; display: block; } .settings-item select, .settings-item input[type=number], .settings-item input[type=text], .toggle-container { padding: 8px; background: var(--background-light); border: 1px solid var(--border-color); border-radius: 4px; color: var(--text-color); width: 100%; box-sizing: border-box; } .settings-item input[type=text] { font-family: monospace; } .toggle-container { padding: 0; display: flex; align-items: center; justify-content: space-between; background: none; border: none; } .toggle-container label:first-child { margin-bottom: 0; } .settings-buttons { display: flex; justify-content: space-between; margin-top: 25px; padding-top: 15px; border-top: 1px solid var(--border-color); } .settings-btn { padding: 10px 15px; border-radius: 4px; border: none; cursor: pointer; background: var(--background-light); color: var(--text-color); transition: all 0.2s ease; } .settings-btn:hover { background: var(--accent-color); color: var(--background-dark); } .settings-btn.primary { background: var(--primary-color); color: white; } .settings-btn.primary:hover { background: #388E3C; } .switch { position: relative; display: inline-block; width: 45px; height: 24px; flex-shrink: 0;} .switch input { opacity: 0; width: 0; height: 0; } .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #4d4d4d; transition: .3s; border-radius: 12px; } .slider:before { position: absolute; content: ""; height: 20px; width: 20px; left: 3px; bottom: 2px; background-color: #f4f4f4; transition: .3s; border-radius: 50%; } input:checked + .slider { background-color: var(--primary-color); } input:checked + .slider:before { transform: translateX(21px); }
+        .color-1 { background-color: #DC143C; } .color-2 { background-color: #4682B4; } .color-3 { background-color: #32CD32; } .color-4 { background-color: #FFD700; } .color-5 { background-color: #FF8C00; } .color-6 { background-color: #9932CC; } .color-7 { background-color: #00CED1; } .color-8 { background-color: #FF1493; } .color-9 { background-color: #8B4513; } .color-10 { background-color: #7FFF00; } .color-11 { background-color: #00FA9A; } .color-12 { background-color: #D2691E; } .color-13 { background-color: #6495ED; } .color-14 { background-color: #F08080; } .color-15 { background-color: #20B2AA; } .color-16 { background-color: #B0C4DE; } .color-17 { background-color: #DA70D6; } .color-18 { background-color: #FF6347; } .color-19 { background-color: #40E0D0; } .color-20 { background-color: #C71585; } .color-21 { background-color: #6A5ACD; } .color-22 { background-color: #FA8072; } .color-default { background-color: #666; }
+        @media (max-width: 768px) { .custom-driver-item { padding: 5px; } .driver-info-row { margin-bottom: 4px; } .driver-name { min-width: 80px; } .driver-telemetry-display { font-size: 0.8em; min-width: 60px; margin-left: 5px; padding: 1px 4px;} .driver-details { font-size: 0.85em; } #custom-driver-list-container { max-height: 350px; } .telemetry-stats-button, .telemetry-settings-button { font-size: 12px; padding: 5px 10px; } .settings-popup-content { width: 95%; padding: 15px; } .settings-title, .stats-title { font-size: 18px; } .settings-btn { padding: 8px 12px; font-size: 14px; } .custom-driver-item.details-visible .driver-details { max-height: 320px; } .stats-panel-content { width: 95%; padding: 15px; font-size: 0.85em; } .stats-content table { font-size: 0.9em; } .stats-content th, .stats-content td { padding: 4px 6px; } }
+        @media (max-width: 480px) { .driver-name { min-width: 60px; } .driver-telemetry-display { min-width: 55px; } .stats-content table { font-size: 0.85em; } .stats-content th, .stats-content td { padding: 3px 4px; } }
+    `);
 
-    // Telemetry calculations
-    const Telemetry = {
-        easeInOutQuad(t) { 
-            return t < 0.5 ? 2*t*t : -1+(4-2*t)*t; 
-        },
+    const Utils = { convertSpeed(speed, unit) { return unit === 'kmh' ? speed * 1.60934 : speed; }, formatTime(seconds, showMs = false) { if (isNaN(seconds) || seconds < 0 || !isFinite(seconds)) return '--:--' + (showMs ? '.---' : ''); const min = Math.floor(seconds / 60); const sec = Math.floor(seconds % 60); const ms = showMs ? '.' + (seconds % 1).toFixed(3).substring(2) : ''; return `${min}:${sec < 10 ? '0' : ''}${sec}${ms}`; }, formatDate(timestamp) { if (!timestamp || timestamp <= 0) return 'N/A'; try { const date = new Date(timestamp * 1000); return date.toISOString().split('T')[0]; } catch (e) { return 'N/A'; } }, parseTime(timeString) { if (!timeString?.includes(':')) return 0; const parts = timeString.split(':'); if (parts.length === 2) { return (parseInt(parts[0], 10) || 0) * 60 + (parseFloat(parts[1]) || 0); } return 0; }, parseProgress(text) { const match = text?.match(/(\d+\.?\d*)%/); return match ? parseFloat(match[1]) : 0; }, makeAbsoluteUrl(url) { if (!url || url.startsWith('http') || url.startsWith('data:')) return url; if (url.startsWith('//')) return `${window.location.protocol}${url}`; if (url.startsWith('/')) return `${window.location.protocol}//${window.location.host}${url}`; const base = window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/')); return `${window.location.protocol}//${window.location.host}${base}/${url}`; }, showNotification(message, type = 'info') { const notif = document.createElement('div'); notif.style.cssText = `position: fixed; bottom: 20px; right: 20px; background: ${type === 'error' ? '#f44336' : type === 'success' ? '#4CAF50' : '#2196F3'}; color: white; padding: 12px 20px; border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.3); z-index: 9999; font-size: 14px; opacity: 0; transition: opacity 0.3s ease-in-out;`; notif.textContent = message; document.body.appendChild(notif); setTimeout(() => notif.style.opacity = '1', 10); setTimeout(() => { notif.style.opacity = '0'; setTimeout(() => notif.remove(), 300); }, 3000); } };
 
-        interpolateColor(color1, color2, factor) {
-            const result = color1.map((c, i) => Math.round(c + factor * (color2[i] - c)));
-            return `rgb(${result[0]}, ${result[1]}, ${result[2]})`;
-        },
+    const Telemetry = { easeInOutQuad(t) { return t < 0.5 ? 2*t*t : -1+(4-2*t)*t; }, interpolateColor(color1, color2, factor) { const result = color1.map((c, i) => Math.round(c + factor * (color2[i] - c))); return `rgb(${result[0]}, ${result[1]}, ${result[2]})`; }, getTelemetryColor(acceleration) { const grey = [136, 136, 136]; const green = [76, 175, 80]; const red = [244, 67, 54]; const defaultColor = getComputedStyle(document.documentElement).getPropertyValue('--telemetry-default-color').match(/\d+/g)?.map(Number) || grey; const accelColor = getComputedStyle(document.documentElement).getPropertyValue('--telemetry-accel-color').match(/\d+/g)?.map(Number) || green; const decelColor = getComputedStyle(document.documentElement).getPropertyValue('--telemetry-decel-color').match(/\d+/g)?.map(Number) || red; if (!Config.get('colorCode')) return `rgb(${defaultColor.join(', ')})`; const maxAcc = 1.0; let factor = Math.min(Math.abs(acceleration) / maxAcc, 1); factor = isNaN(factor) ? 0 : factor; if (acceleration > 0.05) return this.interpolateColor(defaultColor, accelColor, factor); if (acceleration < -0.05) return this.interpolateColor(defaultColor, decelColor, factor); return `rgb(${defaultColor.join(', ')})`; }, animateTelemetry(element, fromSpeed, toSpeed, fromAcc, toAcc, duration, displayMode, speedUnit, extraText) { let startTime = null; const easeFunction = this.easeInOutQuad; const getColor = this.getTelemetryColor.bind(this); fromSpeed = Number(fromSpeed) || 0; toSpeed = Number(toSpeed) || 0; fromAcc = Number(fromAcc) || 0; toAcc = Number(toAcc) || 0; duration = Number(duration) || Config.get('minUpdateInterval'); function step(timestamp) { if (!startTime) startTime = timestamp; let linearProgress = Math.min((timestamp - startTime) / duration, 1); if (isNaN(linearProgress) || duration <= 0) linearProgress = 1; let progress = easeFunction(linearProgress); let currentSpeed = fromSpeed + (toSpeed - fromSpeed) * progress; let currentAcc = fromAcc + (toAcc - fromAcc) * progress; element._currentSpeed = currentSpeed; element._currentAcc = currentAcc; let color = Config.get('colorCode') ? getColor(currentAcc) : 'var(--telemetry-default-color)'; let text; if (displayMode === 'speed') { text = `${Math.round(currentSpeed)} ${speedUnit}`; } else if (displayMode === 'acceleration') { text = `${currentAcc.toFixed(1)} g`; } else { text = `${Math.round(currentSpeed)} ${speedUnit} | ${currentAcc.toFixed(1)} g`; } element.innerHTML = text + extraText; element.style.color = color; if (linearProgress < 1) { element._telemetryAnimationFrame = requestAnimationFrame(step); } else { element._telemetryAnimationFrame = null; if (displayMode === 'speed') { text = `${Math.round(toSpeed)} ${speedUnit}`; } else if (displayMode === 'acceleration') { text = `${toAcc.toFixed(1)} g`; } else { text = `${Math.round(toSpeed)} ${speedUnit} | ${toAcc.toFixed(1)} g`; } element.innerHTML = text + extraText; element.style.color = Config.get('colorCode') ? getColor(toAcc) : 'var(--telemetry-default-color)'; } } if (element._telemetryAnimationFrame) { cancelAnimationFrame(element._telemetryAnimationFrame); } element._telemetryAnimationFrame = requestAnimationFrame(step); }, calculateDriverMetrics(driverId, progressPercentage, timestamp) { const prev = State.previousMetrics[driverId] || { progress: progressPercentage, time: timestamp - Config.get('minUpdateInterval'), instantaneousSpeed: 0, reportedSpeed: 0, acceleration: 0, lastDisplayedSpeed: 0, lastDisplayedAcceleration: 0, firstUpdate: true, currentLap: 1, progressInLap: 0, rawLapEstimate: null, smoothedLapEstimate: null, statusClass: 'ready' }; let dt = (timestamp - prev.time) / 1000; const minDt = Config.get('minUpdateInterval') / 1000; if (dt < minDt && !prev.firstUpdate) { return { speed: prev.reportedSpeed, acceleration: prev.acceleration, timeDelta: dt * 1000, noUpdate: true }; } const effectiveDt = Math.max(minDt, dt); const progressDelta = progressPercentage - prev.progress; if (progressDelta < -0.01 && !prev.firstUpdate) { State.previousMetrics[driverId] = { ...prev, time: timestamp }; return { speed: prev.reportedSpeed, acceleration: prev.acceleration, timeDelta: effectiveDt * 1000 }; } const distanceDelta = State.trackInfo.total * Math.max(0, progressDelta) / 100; const currentSpeed = effectiveDt > 0 ? (distanceDelta / effectiveDt) * 3600 : 0; const averagedSpeed = prev.firstUpdate ? currentSpeed : (prev.reportedSpeed * 0.6 + currentSpeed * 0.4); const speedDeltaMps = (averagedSpeed - prev.reportedSpeed) * 0.44704; const acceleration = (prev.firstUpdate || effectiveDt <= 0) ? 0 : (speedDeltaMps / effectiveDt) / 9.81; const totalLaps = State.trackInfo.laps || 1; const percentPerLap = 100 / totalLaps; const currentLap = Math.min(totalLaps, Math.floor(progressPercentage / percentPerLap) + 1); const startPercentOfLap = (currentLap - 1) * percentPerLap; const progressInLap = percentPerLap > 0 ? Math.max(0, Math.min(100, ((progressPercentage - startPercentOfLap) / percentPerLap) * 100)) : 0; State.previousMetrics[driverId] = { ...prev, progress: progressPercentage, time: timestamp, instantaneousSpeed: currentSpeed, reportedSpeed: averagedSpeed, acceleration: acceleration, lastDisplayedSpeed: averagedSpeed, lastDisplayedAcceleration: acceleration, firstUpdate: false, currentLap: currentLap, progressInLap: progressInLap }; return { speed: Math.max(0, averagedSpeed), acceleration, timeDelta: effectiveDt * 1000 }; }, calculateSmoothedLapEstimate(driverId, metrics) { const driverState = State.previousMetrics[driverId]; if (!driverState || metrics.speed <= 1) { if (driverState) { driverState.rawLapEstimate = null; driverState.smoothedLapEstimate = null; } return null; } const lapLength = State.trackInfo.length || 0; if (lapLength <= 0) return null; const remainingProgressInLap = 100 - driverState.progressInLap; const remainingDistance = lapLength * (remainingProgressInLap / 100); const rawEstimate = (remainingDistance / metrics.speed) * 3600; driverState.rawLapEstimate = rawEstimate; const alpha = Config.get('lapEstimateSmoothingFactor'); let smoothedEstimate; if (driverState.smoothedLapEstimate === null || !isFinite(driverState.smoothedLapEstimate) || isNaN(driverState.smoothedLapEstimate)) { smoothedEstimate = rawEstimate; } else { smoothedEstimate = alpha * rawEstimate + (1 - alpha) * driverState.smoothedLapEstimate; } if (smoothedEstimate > 3600 || smoothedEstimate < 0) { smoothedEstimate = driverState.smoothedLapEstimate ?? rawEstimate; } driverState.smoothedLapEstimate = smoothedEstimate; return smoothedEstimate; } };
 
-        getTelemetryColor(acceleration) {
-            const grey = [136, 136, 136];
-            if (!Config.get('colorCode')) return `rgb(${grey[0]}, ${grey[1]}, ${grey[2]})`;
-            
-            const green = [76, 175, 80];
-            const red = [244, 67, 54];
-            const maxAcc = 1.0;
-            let factor = Math.min(Math.abs(acceleration) / maxAcc, 1);
-            
-            if (acceleration > 0) return this.interpolateColor(grey, green, factor);
-            if (acceleration < 0) return this.interpolateColor(grey, red, factor);
-            return `rgb(${grey[0]}, ${grey[1]}, ${grey[2]})`;
-        },
+    const UI = { createSettingsPopup() { if (State.settingsPopupInstance) State.settingsPopupInstance.remove(); const popup = document.createElement('div'); popup.className = 'settings-popup'; const content = document.createElement('div'); content.className = 'settings-popup-content'; content.innerHTML = `<div class="settings-title">Telemetry & UI Settings <button class="settings-close">×</button></div><div class="settings-content"><div class="settings-item"> <label for="displayMode">Telemetry Display</label> <select id="displayMode"> <option value="speed">Speed Only</option> <option value="acceleration">Acceleration Only</option> <option value="both">Speed & Acceleration</option> </select> </div> <div class="settings-item"> <label for="speedUnit">Speed Unit</label> <select id="speedUnit"> <option value="mph">mph</option> <option value="kmh">km/h</option> </select> </div> <div class="settings-item"> <div class="toggle-container"> <label for="colorCode">Color Code Telemetry</label> <label class="switch"> <input type="checkbox" id="colorCode"> <span class="slider"></span> </label> </div> </div> <div class="settings-item"> <div class="toggle-container"> <label for="animateChanges">Animate Telemetry Changes</label> <label class="switch"> <input type="checkbox" id="animateChanges"> <span class="slider"></span> </label> </div> </div> <div class="settings-item"> <div class="toggle-container"> <label for="showLapEstimate">Show Est. Lap Time</label> <label class="switch"> <input type="checkbox" id="showLapEstimate"> <span class="slider"></span> </label> </div> </div> <div class="settings-item"> <label for="lapEstimateSmoothingFactor">Lap Est. Smoothing (0.01-1.0)</label> <input type="number" id="lapEstimateSmoothingFactor" min="0.01" max="1.0" step="0.01"> </div> <hr style="border: none; border-top: 1px solid var(--border-color); margin: 20px 0;"> <div class="settings-item"> <div class="toggle-container"> <label for="fetchApiStatsOnClick">Load Driver API Stats on Click</label> <label class="switch"> <input type="checkbox" id="fetchApiStatsOnClick"> <span class="slider"></span> </label> </div> <small style="color: #aaa; margin-top: 5px;">(Loads basic stats like skill/points when expanding a driver. Requires API key.)</small> </div> <div class="settings-item"> <label for="apiKey">Torn API Key (Needed for All API Features)</label> <input type="text" id="apiKey" placeholder="Enter API Key (Limited Access Recommended)"> </div> <div class="settings-item"> <label for="historicalRaceLimit">Advanced Stats: Races to Analyze</label> <input type="number" id="historicalRaceLimit" min="10" max="1000" step="10"> </div> <hr style="border: none; border-top: 1px solid var(--border-color); margin: 20px 0;"> <div class="settings-item"> <div class="toggle-container"> <label for="hideOriginalList">Hide Torn's Leaderboard</label> <label class="switch"> <input type="checkbox" id="hideOriginalList"> <span class="slider"></span> </label> </div> </div> <div class="settings-buttons"> <button class="settings-btn toggle-telemetry-btn">Toggle Telemetry Display</button> <button class="settings-btn primary" id="saveSettings">Save & Close</button> </div> </div>`; content.querySelector('#displayMode').value = Config.get('displayMode'); content.querySelector('#speedUnit').value = Config.get('speedUnit'); content.querySelector('#colorCode').checked = Config.get('colorCode'); content.querySelector('#animateChanges').checked = Config.get('animateChanges'); content.querySelector('#showLapEstimate').checked = Config.get('showLapEstimate'); content.querySelector('#lapEstimateSmoothingFactor').value = Config.get('lapEstimateSmoothingFactor'); content.querySelector('#fetchApiStatsOnClick').checked = Config.get('fetchApiStatsOnClick'); content.querySelector('#apiKey').value = Config.get('apiKey'); content.querySelector('#historicalRaceLimit').value = Config.get('historicalRaceLimit'); content.querySelector('#hideOriginalList').checked = Config.get('hideOriginalList'); content.querySelector('.toggle-telemetry-btn').textContent = Config.get('telemetryVisible') ? 'Hide Telemetry' : 'Show Telemetry'; const closePopup = () => { popup.remove(); State.settingsPopupInstance = null; }; content.querySelector('.settings-close').addEventListener('click', closePopup); popup.addEventListener('click', (e) => { if (e.target === popup) closePopup(); }); content.querySelector('.toggle-telemetry-btn').addEventListener('click', (e) => { const newState = !Config.get('telemetryVisible'); Config.set('telemetryVisible', newState); document.body.classList.toggle('telemetry-hidden', !newState); e.target.textContent = newState ? 'Hide Telemetry' : 'Show Telemetry'; Utils.showNotification(`Telemetry display ${newState ? 'shown' : 'hidden'}.`); }); content.querySelector('#hideOriginalList').addEventListener('change', (e) => { const hide = e.target.checked; Config.set('hideOriginalList', hide); const originalScrollbar = document.getElementById('drivers-scrollbar'); if(originalScrollbar) originalScrollbar.style.display = hide ? 'none' : 'block'; }); content.querySelector('#saveSettings').addEventListener('click', () => { Config.set('displayMode', content.querySelector('#displayMode').value); Config.set('speedUnit', content.querySelector('#speedUnit').value); Config.set('colorCode', content.querySelector('#colorCode').checked); Config.set('animateChanges', content.querySelector('#animateChanges').checked); Config.set('showLapEstimate', content.querySelector('#showLapEstimate').checked); Config.set('fetchApiStatsOnClick', content.querySelector('#fetchApiStatsOnClick').checked); const apiKeyInput = content.querySelector('#apiKey').value.trim(); if (apiKeyInput.length > 0 && apiKeyInput.length < 16) { Utils.showNotification('API Key seems too short.', 'error'); } else { Config.set('apiKey', apiKeyInput); } let smoothFactor = parseFloat(content.querySelector('#lapEstimateSmoothingFactor').value); if (isNaN(smoothFactor) || smoothFactor < 0.01 || smoothFactor > 1.0) { smoothFactor = Config.defaults.lapEstimateSmoothingFactor; content.querySelector('#lapEstimateSmoothingFactor').value = smoothFactor; Utils.showNotification('Invalid Smoothing Factor, reset to default.', 'error'); } Config.set('lapEstimateSmoothingFactor', smoothFactor); let raceLimit = parseInt(content.querySelector('#historicalRaceLimit').value, 10); if (isNaN(raceLimit) || raceLimit < 10 || raceLimit > 1000) { raceLimit = Config.defaults.historicalRaceLimit; content.querySelector('#historicalRaceLimit').value = raceLimit; Utils.showNotification('Invalid Race Limit, reset to default.', 'error'); } Config.set('historicalRaceLimit', raceLimit); Utils.showNotification('Settings saved!', 'success'); closePopup(); RaceManager.stableUpdateCustomList(); }); popup.appendChild(content); document.body.appendChild(popup); State.settingsPopupInstance = popup; }, async createAdvancedStatsPanel() { if (State.advancedStatsPanelInstance) State.advancedStatsPanelInstance.remove(); const popup = document.createElement('div'); popup.className = 'stats-panel'; const content = document.createElement('div'); content.className = 'stats-panel-content'; const statsContentDiv = document.createElement('div'); statsContentDiv.className = 'stats-content'; statsContentDiv.innerHTML = `<div class="loading-msg">Loading advanced stats...</div>`; content.innerHTML = `<div class="stats-title">Advanced Race Statistics <button class="stats-close">×</button></div>`; content.appendChild(statsContentDiv); const closePanel = () => { popup.remove(); State.advancedStatsPanelInstance = null; }; content.querySelector('.stats-close').addEventListener('click', closePanel); popup.addEventListener('click', (e) => { if (e.target === popup) closePanel(); }); popup.appendChild(content); document.body.appendChild(popup); State.advancedStatsPanelInstance = popup; let errorMessages = []; let historicalStatsHTML = ''; let trackAnalysisHTML = ''; try { const apiKey = Config.get('apiKey'); if (!apiKey) throw new Error("API Key not configured in Settings."); if (!State.userId) throw new Error("User ID not found."); if (!State.trackNameMap) { try { State.trackNameMap = await APIManager.fetchTrackData(apiKey); } catch (e) { errorMessages.push(`Could not fetch track names: ${e.message}`); State.trackNameMap = {}; } } if (!State.carBaseStatsMap) { try { State.carBaseStatsMap = await APIManager.fetchCarBaseStats(apiKey); } catch (e) { errorMessages.push(`Could not fetch car base stats: ${e.message}`); State.carBaseStatsMap = {}; } } await RaceManager.updateTrackAndClassInfo(); const currentTrackId = State.trackInfo.id; const currentTrackName = State.trackInfo.name || `Track ${currentTrackId || 'Unknown'}`; const currentRaceClass = State.currentRaceClass; let currentUserCar = null; try { currentUserCar = this.parseCurrentUserCarStats(); } catch (e) { /* Non-fatal */ } let historicalRaces = null; let trackRecords = null; const promises = [APIManager.fetchHistoricalRaceData(apiKey, State.userId, Config.get('historicalRaceLimit'))]; if (currentTrackId && currentRaceClass) { promises.push(APIManager.fetchTrackRecords(apiKey, currentTrackId, currentRaceClass)); } else { promises.push(Promise.resolve(null)); if (!currentTrackId) errorMessages.push("Could not identify the current track."); if (!currentRaceClass) errorMessages.push("Could not identify the race class from page banner."); } const [histResult, recordResult] = await Promise.allSettled(promises); if (histResult.status === 'fulfilled') { historicalRaces = histResult.value; } else { errorMessages.push(`Could not fetch historical races: ${histResult.reason.message}`); } if (recordResult.status === 'fulfilled' && recordResult.value !== null) { trackRecords = recordResult.value; } else if (recordResult.status === 'rejected') { if (!recordResult.reason.message?.includes('404')) { errorMessages.push(`Could not fetch track records: ${recordResult.reason.message}`); } else { trackRecords = []; } } if (historicalRaces) { historicalStatsHTML = this.buildHistoricalStatsHTML(StatsCalculator.processRaceData(historicalRaces, State.userId)); } else { historicalStatsHTML = `<p class="info-msg">Historical race data could not be loaded.</p>`; } if (currentTrackId && currentRaceClass) { trackAnalysisHTML = this.buildTrackAnalysisHTML(trackRecords, currentUserCar, currentTrackName, currentRaceClass); } else { trackAnalysisHTML = `<p class="info-msg">Track analysis requires knowing the track and race class.</p>`; } } catch (error) { errorMessages.push(`An unexpected error occurred: ${error.message}`); if (!historicalStatsHTML) historicalStatsHTML = `<p class="error-msg">Failed to load historical data.</p>`; if (!trackAnalysisHTML) trackAnalysisHTML = `<p class="error-msg">Failed to load track analysis data.</p>`; } finally { let finalHTML = ''; if (errorMessages.length > 0) { finalHTML += `<div class="error-msg"><strong>Encountered issues:</strong><br>${errorMessages.join('<br>')}</div>`; } finalHTML += historicalStatsHTML; finalHTML += trackAnalysisHTML; statsContentDiv.innerHTML = finalHTML; } }, buildHistoricalStatsHTML(processedData) { if (!processedData || processedData.totalRaces === 0) { return `<h3>Your Recent Performance</h3><p class="info-msg">No recent official race data found to analyze.</p>`; } const overall = processedData.overall; const trackStats = Object.values(processedData.trackStats).sort((a, b) => b.races - a.races); const carStats = Object.values(processedData.carStats).sort((a, b) => b.races - a.races); let html = `<h3>Your Recent Performance</h3>`; html += `<p>Analyzed <strong>${overall.races}</strong> official races from ${Utils.formatDate(processedData.firstRaceTime)} to ${Utils.formatDate(processedData.lastRaceTime)}.</p>`; html += `<p><span class="stat-label">Avg Position:</span> <span class="stat-value">${overall.avgPosition.toFixed(2)}</span> | <span class="stat-label">Win Rate:</span> <span class="stat-value">${overall.winRate.toFixed(1)}%</span> | <span class="stat-label">Podium Rate:</span> <span class="stat-value">${overall.podiumRate.toFixed(1)}%</span> | <span class="stat-label">Crash Rate:</span> <span class="stat-value">${overall.crashRate.toFixed(1)}%</span></p>`; html += `<h4>Performance by Track</h4>`; if (trackStats.length > 0) { html += `<table><thead><tr><th>Track</th><th class="numeric">Races</th><th class="numeric">Avg Pos</th><th class="numeric">Win %</th><th class="numeric">Podium %</th><th class="numeric">Crash %</th><th class="numeric">Best Lap</th></tr></thead><tbody>`; trackStats.forEach(t => { html += `<tr><td>${t.name}</td><td class="numeric">${t.races}</td><td class="numeric">${t.avgPosition.toFixed(2)}</td><td class="numeric">${t.winRate.toFixed(1)}</td><td class="numeric">${t.podiumRate.toFixed(1)}</td><td class="numeric">${t.crashRate.toFixed(1)}</td><td class="numeric">${t.bestLap === Infinity ? '-' : t.bestLap.toFixed(2)}s</td></tr>`; }); html += `</tbody></table>`; } else { html += `<p>No track-specific data.</p>`; } html += `<h4>Performance by Car</h4>`; if (carStats.length > 0) { html += `<table><thead><tr><th>Car</th><th class="numeric">Races</th><th class="numeric">Avg Pos</th><th class="numeric">Win %</th><th class="numeric">Podium %</th><th class="numeric">Crash %</th></tr></thead><tbody>`; carStats.forEach(c => { html += `<tr><td>${c.name}</td><td class="numeric">${c.races}</td><td class="numeric">${c.avgPosition.toFixed(2)}</td><td class="numeric">${c.winRate.toFixed(1)}</td><td class="numeric">${c.podiumRate.toFixed(1)}</td><td class="numeric">${c.crashRate.toFixed(1)}</td></tr>`; }); html += `</tbody></table>`; } else { html += `<p>No car-specific data.</p>`; } return html; }, buildTrackAnalysisHTML(trackRecords, currentUserCar, trackName, raceClass) { let html = `<h3>Track Analysis: ${trackName} (Class ${raceClass || 'Unknown'})</h3>`; html += `<h4>Your Current Car</h4>`; if (currentUserCar && currentUserCar.stats) { html += `<p><strong>${currentUserCar.name}</strong> (ID: ${currentUserCar.id})</p><p class="car-stats-inline">`; const statOrder = ["Top Speed", "Acceleration", "Handling", "Braking", "Dirt", "Tarmac", "Safety"]; html += statOrder.map(statName => { const value = currentUserCar.stats[statName]; return value !== undefined ? `<strong>${statName}:</strong> ${value}` : null; }).filter(s => s !== null).join(' | '); html += `</p>`; } else if (currentUserCar) { html += `<p><strong>${currentUserCar.name}</strong> (ID: ${currentUserCar.id}) - <i>Stats could not be parsed.</i></p>`; } else { html += `<p class="info-msg">Could not identify your currently selected car.</p>`; } html += `<h4>Track Records (Top 5)</h4>`; if (trackRecords && trackRecords.length > 0) { html += `<table><thead><tr><th class="numeric">#</th><th class="numeric">Lap Time</th><th>Car</th><th>Driver</th></tr></thead><tbody>`; trackRecords.slice(0, 5).forEach((rec, index) => { const isUserCar = currentUserCar && rec.car_item_id === currentUserCar.id; html += `<tr ${isUserCar ? 'class="user-car-highlight"' : ''}><td class="numeric">${index + 1}</td><td class="numeric">${rec.lap_time.toFixed(2)}s</td><td>${rec.car_item_name} ${isUserCar ? '(Your Car)' : ''}</td><td><a href="/profiles.php?XID=${rec.driver_id}" target="_blank" rel="noopener noreferrer">${rec.driver_name} [${rec.driver_id}]</a></td></tr>`; }); html += `</tbody></table>`; html += `<h4>Top Performing Cars Analysis</h4>`; const topCarsData = StatsCalculator.processTrackRecords(trackRecords); if (topCarsData && topCarsData.length > 0) { html += `<table><thead><tr><th>Car</th><th class="numeric">Times in Top ${trackRecords.length}</th><th>Key Stats</th></tr></thead><tbody>`; topCarsData.slice(0, 5).forEach(carData => { const baseStats = State.carBaseStatsMap?.[carData.car_item_id]; let statsString = '<i>Base stats unavailable</i>'; if (baseStats) { statsString = `<strong>Spd:</strong> ${baseStats.top_speed}, <strong>Acc:</strong> ${baseStats.acceleration}, <strong>Hnd:</strong> ${baseStats.handling}, <strong>Brk:</strong> ${baseStats.braking}, <strong>Drt:</strong> ${baseStats.dirt}`; } const isUserCar = currentUserCar && carData.car_item_id === currentUserCar.id; html += `<tr ${isUserCar ? 'class="user-car-highlight"' : ''}><td>${carData.car_item_name} ${isUserCar ? '(Your Car)' : ''}</td><td class="numeric">${carData.count}</td><td><span class="car-stats-inline">${statsString}</span></td></tr>`; }); html += `</tbody></table>`; } else { html += `<p>Could not analyze top performing cars.</p>`; } } else if (trackRecords) { html += `<p class="info-msg">No records found for this track/class.</p>`; } else { html += `<p class="error-msg">Track records could not be loaded.</p>`; } return html; }, parseCurrentUserCarStats() { const carDiv = document.querySelector('div.car-selected.left'); if (!carDiv) return null; try { const nameEl = carDiv.querySelector('.model p:first-child'); const imgEl = carDiv.querySelector('.model .img img.torn-item'); const name = nameEl ? nameEl.textContent.trim() : 'Unknown Car'; let id = null; if (imgEl && imgEl.src) { const idMatch = imgEl.src.match(/\/items\/(\d+)\//); if (idMatch) id = parseInt(idMatch[1], 10); } const stats = {}; const statItems = carDiv.querySelectorAll('ul.properties-wrap li'); statItems.forEach(li => { const titleEl = li.querySelector('.title'); const progressBarEl = li.querySelector('.progressbar-wrap'); if (titleEl && progressBarEl && progressBarEl.title) { const statName = titleEl.textContent.trim(); const titleAttr = progressBarEl.title; const valueMatch = titleAttr.match(/^(\d+)\s*\(/); if (valueMatch) { stats[statName] = parseInt(valueMatch[1], 10); } } }); if (Object.keys(stats).length === 0) { return { name, id, stats: null }; } return { name, id, stats }; } catch (e) { return null; } }, initializeControls(targetContainer) { let controlsContainer = document.getElementById('telemetryControlsContainer'); if (!controlsContainer) { controlsContainer = document.createElement('div'); controlsContainer.id = 'telemetryControlsContainer'; controlsContainer.className = 'telemetry-controls-container'; targetContainer.parentNode.insertBefore(controlsContainer, targetContainer); } if (!controlsContainer.querySelector('.telemetry-stats-button')) { const statsButton = document.createElement('button'); statsButton.className = 'telemetry-stats-button'; statsButton.textContent = '📊 Stats'; statsButton.title = 'Open Advanced Race Statistics'; statsButton.addEventListener('click', () => { RaceManager.updateTrackAndClassInfo().then(() => { this.createAdvancedStatsPanel(); }).catch(e => { Utils.showNotification("Error getting latest track/class info.", "error"); }); }); controlsContainer.appendChild(statsButton); } if (!controlsContainer.querySelector('.telemetry-settings-button')) { const settingsButton = document.createElement('button'); settingsButton.className = 'telemetry-settings-button'; settingsButton.textContent = '⚙ Settings'; settingsButton.title = 'Open Telemetry & UI Settings'; settingsButton.addEventListener('click', () => { this.createSettingsPopup(); }); controlsContainer.appendChild(settingsButton); } document.body.classList.toggle('telemetry-hidden', !Config.get('telemetryVisible')); } };
 
-        animateTelemetry(element, fromSpeed, toSpeed, fromAcc, toAcc, duration, displayMode, speedUnit, extraText) {
-            let startTime = null;
-            const easeFunction = this.easeInOutQuad;
-            const getColor = this.getTelemetryColor.bind(this);
-            
-            function step(timestamp) {
-                if (!startTime) startTime = timestamp;
-                let linearProgress = Math.min((timestamp - startTime) / duration, 1);
-                let progress = easeFunction(linearProgress);
-                
-                let currentSpeed = fromSpeed + (toSpeed - fromSpeed) * progress;
-                let currentAcc = fromAcc + (toAcc - fromAcc) * progress;
-                element._currentSpeed = currentSpeed;
-                element._currentAcc = currentAcc;
-                
-                let color = Config.get('colorCode') ? getColor(currentAcc) : 'rgb(136, 136, 136)';
-                let text;
-                
-                if (displayMode === 'speed') {
-                    text = `${Math.round(currentSpeed)} ${speedUnit}`;
-                } else if (displayMode === 'acceleration') {
-                    text = `${currentAcc.toFixed(1)} g`;
-                } else {
-                    text = `${Math.round(currentSpeed)} ${speedUnit} | ${currentAcc.toFixed(1)} g`;
-                }
-                text += extraText;
-                
-                element.textContent = text;
-                element.style.color = color;
-                
-                if (linearProgress < 1) {
-                    element._telemetryAnimationFrame = requestAnimationFrame(step);
-                } else {
-                    element._telemetryAnimationFrame = null;
-                }
-            }
-            
-            if (element._telemetryAnimationFrame) {
-                cancelAnimationFrame(element._telemetryAnimationFrame);
-            }
-            element._telemetryAnimationFrame = requestAnimationFrame(step);
-        },
+    const APIManager = { isFetching: new Set(), async fetchWithAuthHeader(url, apiKey, options = {}) { if (!apiKey) throw new Error("API Key is required."); const response = await fetch(url, { ...options, headers: { 'Accept': 'application/json', 'Authorization': 'ApiKey ' + apiKey, ...(options.headers || {}) } }); if (!response.ok) { let errorMsg = `API Error (${response.status}): ${response.statusText}`; try { const errorData = await response.json(); if (errorData.error?.error) { errorMsg = `API Error: ${errorData.error.error} (Code ${errorData.error.code})`; } } catch (e) {} const error = new Error(errorMsg); error.statusCode = response.status; throw error; } const data = await response.json(); if (data.error) { throw new Error(`API Error: ${data.error.error} (Code ${data.error.code})`); } return data; }, async fetchAndDisplayRacingStats(driverItem, userId) { const detailsDiv = driverItem.querySelector('.driver-details'); const statsContainer = detailsDiv?.querySelector('.api-stats-container'); if (!statsContainer || !userId || this.isFetching.has(userId)) return; const apiKey = Config.get('apiKey'); if (!apiKey) { statsContainer.classList.add('no-key'); statsContainer.querySelector('.api-stat-error-msg').textContent = 'API key not configured in settings.'; statsContainer.querySelectorAll('.api-stat').forEach(span => span.textContent = 'N/A'); driverItem.dataset.statsLoaded = 'true'; return; } this.isFetching.add(userId); statsContainer.classList.remove('error', 'loaded', 'no-key'); statsContainer.classList.add('loading'); statsContainer.querySelector('.api-stat-error-msg').textContent = ''; statsContainer.querySelectorAll('.api-stat').forEach(span => span.textContent = '...'); const apiUrl = `https://api.torn.com/v2/user?selections=personalstats&id=${userId}&cat=racing&key=${apiKey}`; try { const response = await fetch(apiUrl); if (!response.ok) { let errorMsg = `HTTP error ${response.status}`; try { const errorData = await response.json(); if (errorData.error?.error) errorMsg = `API Error: ${errorData.error.error} (Code ${errorData.error.code})`; } catch (e) {} throw new Error(errorMsg); } const data = await response.json(); if (data.error) throw new Error(`API Error: ${data.error.error} (Code ${data.error.code})`); const racingStats = data?.personalstats?.racing; if (racingStats && typeof racingStats === 'object') { statsContainer.querySelector('.stat-skill').textContent = racingStats.skill?.toLocaleString() ?? 'N/A'; statsContainer.querySelector('.stat-points').textContent = racingStats.points?.toLocaleString() ?? 'N/A'; const racesEntered = racingStats.races?.entered; const racesWon = racingStats.races?.won; statsContainer.querySelector('.stat-races-entered').textContent = racesEntered?.toLocaleString() ?? 'N/A'; statsContainer.querySelector('.stat-races-won').textContent = racesWon?.toLocaleString() ?? 'N/A'; const winRate = (racesEntered && racesWon > 0) ? ((racesWon / racesEntered) * 100).toFixed(1) + '%' : (racesEntered > 0 ? '0.0%' : 'N/A'); statsContainer.querySelector('.stat-win-rate').textContent = winRate; statsContainer.classList.add('loaded'); driverItem.dataset.statsLoaded = 'true'; } else { statsContainer.classList.add('error'); statsContainer.querySelector('.api-stat-error-msg').textContent = 'No racing stats found (or permission denied).'; statsContainer.querySelectorAll('.api-stat').forEach(span => span.textContent = 'N/A'); driverItem.dataset.statsLoaded = 'true'; } } catch (error) { statsContainer.classList.add('error'); statsContainer.querySelector('.api-stat-error-msg').textContent = `Error: ${error.message}`; statsContainer.querySelectorAll('.api-stat').forEach(span => span.textContent = '-'); delete driverItem.dataset.statsLoaded; } finally { statsContainer.classList.remove('loading'); this.isFetching.delete(userId); } }, async fetchTrackData(apiKey) { const data = await this.fetchWithAuthHeader('https://api.torn.com/v2/racing/tracks', apiKey); const trackMap = {}; if (data && data.tracks) { data.tracks.forEach(track => { trackMap[track.id] = track.title; }); } if (Object.keys(trackMap).length === 0) { } return trackMap; }, async fetchCarBaseStats(apiKey) { const data = await this.fetchWithAuthHeader('https://api.torn.com/v2/racing/cars', apiKey); const carMap = {}; if (data && data.cars) { data.cars.forEach(car => { carMap[car.car_item_id] = car; }); } if (Object.keys(carMap).length === 0) { } return carMap; }, async fetchHistoricalRaceData(apiKey, userId, limit) { if (!apiKey) throw new Error("API Key required."); if (!userId) throw new Error("User ID required."); limit = Math.max(10, Math.min(1000, limit || 100)); const url = `https://api.torn.com/v2/user/races?key=${apiKey}&id=${userId}&cat=official&sort=DESC&limit=${limit}`; const response = await fetch(url); if (!response.ok) { let errorMsg = `API Error (${response.status}): ${response.statusText}`; try { const errorData = await response.json(); if (errorData.error?.error) errorMsg = `API Error: ${errorData.error.error} (Code ${errorData.error.code})`; } catch (e) {} throw new Error(errorMsg); } const data = await response.json(); if (data.error) { throw new Error(`API Error: ${data.error.error} (Code ${data.error.code})`); } return data.races || []; }, async fetchTrackRecords(apiKey, trackId, raceClass) { if (!trackId) throw new Error("Track ID required."); if (!raceClass) throw new Error("Race Class required."); const url = `https://api.torn.com/v2/racing/${trackId}/records?cat=${raceClass}`; const data = await this.fetchWithAuthHeader(url, apiKey); return data.records || []; } };
+    const StatsCalculator = { processRaceData(races, userId) { if (!races || races.length === 0 || !userId) { return { overall: { races: 0 }, trackStats: {}, carStats: {}, firstRaceTime: null, lastRaceTime: null }; } const overall = { races: 0, wins: 0, podiums: 0, crashes: 0, positionSum: 0 }; const trackStats = {}; const carStats = {}; let firstRaceTime = Infinity; let lastRaceTime = 0; races.forEach(race => { if (race.status !== 'finished' || !race.results) return; const userResult = race.results.find(r => r.driver_id == userId); if (!userResult) return; overall.races++; const raceTime = race.schedule?.end || 0; if (raceTime > 0) { firstRaceTime = Math.min(firstRaceTime, raceTime); lastRaceTime = Math.max(lastRaceTime, raceTime); } const trackId = race.track_id; const carName = userResult.car_item_name || 'Unknown Car'; const trackName = State.trackNameMap?.[trackId] || `Track ${trackId}`; if (!trackStats[trackId]) trackStats[trackId] = { name: trackName, races: 0, wins: 0, podiums: 0, crashes: 0, positionSum: 0, bestLap: Infinity }; if (!carStats[carName]) carStats[carName] = { name: carName, races: 0, wins: 0, podiums: 0, crashes: 0, positionSum: 0 }; trackStats[trackId].races++; carStats[carName].races++; if (userResult.has_crashed) { overall.crashes++; trackStats[trackId].crashes++; carStats[carName].crashes++; } else { const position = userResult.position; overall.positionSum += position; trackStats[trackId].positionSum += position; carStats[carName].positionSum += position; if (position === 1) { overall.wins++; trackStats[trackId].wins++; carStats[carName].wins++; } if (position <= 3) { overall.podiums++; trackStats[trackId].podiums++; carStats[carName].podiums++; } if (userResult.best_lap_time && userResult.best_lap_time < trackStats[trackId].bestLap) { trackStats[trackId].bestLap = userResult.best_lap_time; } } }); const calcRates = (stats) => { const finishedRaces = stats.races - stats.crashes; stats.winRate = finishedRaces > 0 ? (stats.wins / finishedRaces) * 100 : 0; stats.podiumRate = finishedRaces > 0 ? (stats.podiums / finishedRaces) * 100 : 0; stats.crashRate = stats.races > 0 ? (stats.crashes / stats.races) * 100 : 0; stats.avgPosition = finishedRaces > 0 ? (stats.positionSum / finishedRaces) : 0; return stats; }; calcRates(overall); Object.values(trackStats).forEach(calcRates); Object.values(carStats).forEach(calcRates); return { overall, trackStats, carStats, totalRaces: overall.races, firstRaceTime: firstRaceTime === Infinity ? null : firstRaceTime, lastRaceTime: lastRaceTime === 0 ? null : lastRaceTime }; }, processTrackRecords(records) { if (!records || records.length === 0) return []; const carCounts = {}; records.forEach(rec => { if (!carCounts[rec.car_item_id]) { carCounts[rec.car_item_id] = { car_item_id: rec.car_item_id, car_item_name: rec.car_item_name, count: 0 }; } carCounts[rec.car_item_id].count++; }); return Object.values(carCounts).sort((a, b) => b.count - a.count); } };
 
-        calculateDriverMetrics(driverId, progressPercentage, timestamp) {
-            const prev = State.previousMetrics[driverId] || {
-                progress: progressPercentage,
-                time: timestamp,
-                instantaneousSpeed: 0,
-                reportedSpeed: 0,
-                acceleration: 0,
-                lastDisplayedSpeed: 0,
-                lastDisplayedAcceleration: 0,
-                firstUpdate: true
-            };
-            
-            let dt = (timestamp - prev.time) / 1000;
-            const minDt = Config.get('minUpdateInterval') / 1000;
-            const effectiveDt = dt < minDt ? minDt : dt;
-            
-            if (dt <= 0) {
-                State.previousMetrics[driverId] = prev;
-                return { speed: prev.reportedSpeed, acceleration: prev.acceleration, timeDelta: effectiveDt };
-            }
-            
-            const distanceDelta = State.trackInfo.total * (progressPercentage - prev.progress) / 100;
-            const currentSpeed = (distanceDelta / effectiveDt) * 3600;
-            const averagedSpeed = prev.firstUpdate ? currentSpeed : (prev.instantaneousSpeed + currentSpeed) / 2;
-            const acceleration = prev.firstUpdate ? 0 : ((averagedSpeed - prev.reportedSpeed) / effectiveDt) * 0.44704 / 9.81;
-            
-            State.previousMetrics[driverId] = {
-                progress: progressPercentage,
-                time: timestamp,
-                instantaneousSpeed: currentSpeed,
-                reportedSpeed: averagedSpeed,
-                acceleration: acceleration,
-                lastDisplayedSpeed: prev.lastDisplayedSpeed || averagedSpeed,
-                lastDisplayedAcceleration: prev.lastDisplayedAcceleration || acceleration,
-                firstUpdate: false
-            };
-            
-            return { speed: Math.abs(averagedSpeed), acceleration, timeDelta: effectiveDt };
-        },
-
-        updateDriverDisplay(driverElement, percentageText, progressPercentage) {
-            try {
-                const driverId = driverElement?.id;
-                if (!driverId) return;
-                
-                const now = Date.now();
-                if (now - (State.lastUpdateTimes[driverId] || 0) < Config.get('minUpdateInterval')) return;
-                State.lastUpdateTimes[driverId] = now;
-                
-                const nameEl = driverElement.querySelector('.name');
-                const timeEl = driverElement.querySelector('.time');
-                const statusEl = driverElement.querySelector('.status-wrap div');
-                if (!nameEl || !timeEl || !statusEl) return;
-                
-                let statusText = nameEl.querySelector('.driver-status') || document.createElement('span');
-                statusText.className = 'driver-status';
-                if (!statusText.parentElement) nameEl.appendChild(statusText);
-
-                const infoSpot = document.getElementById('infoSpot');
-                const notStartedText = '🛑 NOT STARTED';
-                
-                // Check if race hasn't started yet
-                if (infoSpot && infoSpot.textContent.trim().toLowerCase() === 'race starting') {
-                    statusText.textContent = notStartedText;
-                    statusText.style.color = 'rgb(136, 136, 136)';
-                    return;
-                }
-
-                // Check if any driver has started
-                let raceHasBegun = false;
-                const allDriverTimes = document.querySelectorAll('#leaderBoard li[id^="lbr-"] .time');
-                for (const timeElement of allDriverTimes) {
-                    if (timeElement.textContent.trim() && timeElement.textContent.trim() !== '0%') {
-                        raceHasBegun = true;
-                        break;
-                    }
-                }
-
-                if (!raceHasBegun && !(infoSpot && infoSpot.textContent.trim().toLowerCase() === 'race finished')) {
-                    statusText.textContent = notStartedText;
-                    statusText.style.color = 'rgb(136, 136, 136)';
-                    return;
-                }
-
-                // Check if driver has finished
-                const isFinished = ['finished', 'gold', 'silver', 'bronze'].some(cls => statusEl.classList.contains(cls));
-                if (isFinished) {
-                    const finishTime = Utils.parseTime(timeEl.textContent);
-                    const avgSpeed = finishTime > 0 ? (State.trackInfo.total / finishTime) * 3600 : 0;
-                    const avgSpeedFormatted = Math.round(Utils.convertSpeed(avgSpeed, Config.get('speedUnit')));
-                    statusText.textContent = `🏁 ${avgSpeedFormatted} ${Config.get('speedUnit')}`;
-                    statusText.style.color = 'rgb(136, 136, 136)';
-                } else {
-                    // Show active telemetry
-                    const metrics = this.calculateDriverMetrics(driverId, progressPercentage, now);
-                    const targetSpeed = Math.round(Utils.convertSpeed(metrics.speed, Config.get('speedUnit')));
-                    let extraText = "";
-                    
-                    // Add estimated lap time for selected driver
-                    if (driverElement.classList.contains('selected')) {
-                        const pdLapEl = document.querySelector('#racingdetails .pd-lap');
-                        if (pdLapEl) {
-                            const [currentLap, totalLaps] = pdLapEl.textContent.split('/').map(Number);
-                            const lapPercentage = 100 / totalLaps;
-                            const progressInLap = (progressPercentage - (currentLap - 1) * lapPercentage) / lapPercentage * 100;
-                            const remainingDistance = State.trackInfo.length * (1 - progressInLap / 100);
-                            if (metrics.speed > 0) {
-                                const estTime = (remainingDistance / metrics.speed) * 3600;
-                                extraText = ` | Est. Lap: ${Utils.formatTime(estTime)}`;
-                            }
-                        }
-                    }
-                    
-                    if (Config.get('animateChanges')) {
-                        const fromSpeed = (statusText._currentSpeed !== undefined) ? 
-                            statusText._currentSpeed : State.previousMetrics[driverId].lastDisplayedSpeed;
-                        const fromAcc = (statusText._currentAcc !== undefined) ? 
-                            statusText._currentAcc : State.previousMetrics[driverId].lastDisplayedAcceleration;
-                        const duration = metrics.timeDelta * 1000;
-                        
-                        this.animateTelemetry(
-                            statusText, fromSpeed, targetSpeed, fromAcc, metrics.acceleration, 
-                            duration, Config.get('displayMode'), Config.get('speedUnit'), extraText
-                        );
-                        
-                        State.previousMetrics[driverId].lastDisplayedSpeed = targetSpeed;
-                        State.previousMetrics[driverId].lastDisplayedAcceleration = metrics.acceleration;
-                    } else {
-                        let text;
-                        const displayMode = Config.get('displayMode');
-                        if (displayMode === 'speed') {
-                            text = `${targetSpeed} ${Config.get('speedUnit')}`;
-                        } else if (displayMode === 'acceleration') {
-                            text = `${metrics.acceleration.toFixed(1)} g`;
-                        } else {
-                            text = `${targetSpeed} ${Config.get('speedUnit')} | ${metrics.acceleration.toFixed(1)} g`;
-                        }
-                        text += extraText;
-                        statusText.textContent = text;
-                        statusText.style.color = Config.get('colorCode') ? 
-                            this.getTelemetryColor(metrics.acceleration) : 'rgb(136, 136, 136)';
-                    }
-                }
-            } catch (e) {
-                console.error('Driver display update failed:', e);
-            }
-        }
-    };
-
-    // User Interface
-    const UI = {
-        createSettingsPopup() {
-            // Remove any existing popup
-            const existingPopup = document.querySelector('.settings-popup');
-            if (existingPopup) existingPopup.remove();
-            
-            // Create popup container
-            const popup = document.createElement('div');
-            popup.className = 'settings-popup';
-            
-            // Create popup content
-            const content = document.createElement('div');
-            content.className = 'settings-popup-content';
-            
-            // Add header and content
-            content.innerHTML = `
-                <div class="settings-title">
-                    Telemetry Settings
-                    <button class="settings-close">Close</button>
-                </div>
-                
-                <div class="settings-content">
-                    <div class="settings-item">
-                        <label>Display Mode</label>
-                        <select id="displayMode">
-                            <option value="speed" ${Config.get('displayMode') === 'speed' ? 'selected' : ''}>Speed</option>
-                            <option value="acceleration" ${Config.get('displayMode') === 'acceleration' ? 'selected' : ''}>Acceleration</option>
-                            <option value="both" ${Config.get('displayMode') === 'both' ? 'selected' : ''}>Both</option>
-                        </select>
-                    </div>
-                    
-                    <div class="settings-item">
-                        <label>Speed Unit</label>
-                        <select id="speedUnit">
-                            <option value="mph" ${Config.get('speedUnit') === 'mph' ? 'selected' : ''}>mph</option>
-                            <option value="kmh" ${Config.get('speedUnit') === 'kmh' ? 'selected' : ''}>km/h</option>
-                        </select>
-                    </div>
-                    
-                    <div class="settings-item">
-                        <label>Color Coding</label>
-                        <div class="toggle-wrapper">
-                            <label class="switch">
-                                <input type="checkbox" id="colorCode" ${Config.get('colorCode') ? 'checked' : ''}>
-                                <span class="slider"></span>
-                            </label>
-                        </div>
-                    </div>
-                    
-                    <div class="settings-item">
-                        <label>Animate Changes</label>
-                        <div class="toggle-wrapper">
-                            <label class="switch">
-                                <input type="checkbox" id="animateChanges" ${Config.get('animateChanges') ? 'checked' : ''}>
-                                <span class="slider"></span>
-                            </label>
-                        </div>
-                    </div>
-                    
-                    <div class="settings-buttons">
-                        <button class="settings-btn toggle-telemetry-btn">
-                            ${Config.get('telemetryVisible') ? 'Hide Telemetry' : 'Show Telemetry'}
-                        </button>
-                        <button class="settings-btn primary" id="saveSettings">Save Settings</button>
-                    </div>
-                </div>
-            `;
-            
-            // Add event listeners
-            content.querySelector('.settings-close').addEventListener('click', () => {
-                popup.remove();
-            });
-            
-            // Toggle telemetry visibility
-            const toggleBtn = content.querySelector('.toggle-telemetry-btn');
-            toggleBtn.addEventListener('click', () => {
-                const newState = !Config.get('telemetryVisible');
-                Config.set('telemetryVisible', newState);
-                document.body.classList.toggle('telemetry-hidden', !newState);
-                toggleBtn.textContent = newState ? 'Hide Telemetry' : 'Show Telemetry';
-                Utils.showNotification(`Telemetry ${newState ? 'shown' : 'hidden'}`, 'success');
-            });
-            
-            // Save settings
-            content.querySelector('#saveSettings').addEventListener('click', () => {
-                // Save settings
-                Config.set('displayMode', content.querySelector('#displayMode').value);
-                Config.set('speedUnit', content.querySelector('#speedUnit').value);
-                Config.set('colorCode', content.querySelector('#colorCode').checked);
-                Config.set('animateChanges', content.querySelector('#animateChanges').checked);
-                
-                // Show success notification
-                Utils.showNotification('Settings saved successfully', 'success');
-                
-                // Close popup
-                popup.remove();
-            });
-            
-            // Close on outside click
-            popup.addEventListener('click', (e) => {
-                if (e.target === popup) {
-                    popup.remove();
-                }
-            });
-            
-            // Add popup to page
-            popup.appendChild(content);
-            document.body.appendChild(popup);
-            
-            return popup;
-        },
-        
-        initializeUI(container) {
-            // Try to find existing button container
-            let buttonContainer = document.getElementById('telemetryButtonContainer');
-            
-            // If no container exists, create one
-            if (!buttonContainer) {
-                buttonContainer = document.createElement('div');
-                buttonContainer.id = 'telemetryButtonContainer';
-                buttonContainer.className = 'telemetry-button-container';
-                container.prepend(buttonContainer);
-            }
-            
-            // Add our button if it doesn't exist
-            if (!buttonContainer.querySelector('.telemetry-settings-button')) {
-                const settingsButton = document.createElement('div');
-                settingsButton.className = 'telemetry-button telemetry-settings-button';
-                settingsButton.textContent = 'Telemetry Settings';
-                settingsButton.addEventListener('click', () => {
-                    this.createSettingsPopup();
-                });
-                
-                buttonContainer.appendChild(settingsButton);
-            }
-            
-            // Check if telemetry should be hidden
-            if (!Config.get('telemetryVisible')) {
-                document.body.classList.add('telemetry-hidden');
-            }
-        }
-    };
-
-    // Race Manager
     const RaceManager = {
-        updateTrackInfo() {
-            try {
-                const trackHeader = document.querySelector('.drivers-list .title-black');
-                if (!trackHeader) return;
-                
-                const parentElement = trackHeader.parentElement;
-                if (!parentElement) return;
-                
-                const infoElement = parentElement.querySelector('.track-info');
-                const lapsMatch = trackHeader.textContent.match(/(\d+)\s+laps?/i);
-                const lengthMatch = infoElement?.dataset.length?.match(/(\d+\.?\d*)/);
-                
-                State.trackInfo = {
-                    laps: lapsMatch ? parseInt(lapsMatch[1]) : 5,
-                    length: lengthMatch ? parseFloat(lengthMatch[1]) : 3.4,
-                    get total() { return this.laps * this.length; }
-                };
-            } catch (e) {
-                console.error('Error updating track info:', e);
-                State.trackInfo = { laps: 5, length: 3.4, get total() { return this.laps * this.length; } };
-            }
-        },
-        
-        setupPeriodicCheck() {
-            if (State.periodicCheckIntervalId) clearInterval(State.periodicCheckIntervalId);
-            
-            State.periodicCheckIntervalId = setInterval(() => {
-                try {
-                    document.querySelectorAll('#leaderBoard li[id^="lbr-"]').forEach(driverEl => {
-                        const timeEl = driverEl.querySelector('.time');
-                        if (!timeEl) return;
-                        const text = timeEl.textContent.trim();
-                        const progress = Utils.parseProgress(text);
-                        Telemetry.updateDriverDisplay(driverEl, text, progress);
-                    });
-                } catch (e) {
-                    console.error('Periodic check error:', e);
-                }
-            }, 1000); // Check every second
-        },
-        
-        observeDrivers() {
-            State.observers.forEach(obs => obs.disconnect());
-            State.observers = [];
-            
-            const drivers = document.querySelectorAll('#leaderBoard li[id^="lbr-"]');
-            drivers.forEach(driverEl => {
-                const timeEl = driverEl.querySelector('.time');
-                if (!timeEl) return;
-                
-                // Initial update
-                Telemetry.updateDriverDisplay(driverEl, timeEl.textContent || '0%', Utils.parseProgress(timeEl.textContent || '0%'));
-                
-                // Setup observer for changes
-                const observer = new MutationObserver(() => {
-                    try {
-                        const text = timeEl.textContent || '0%';
-                        const progress = Utils.parseProgress(text);
-                        if (progress !== State.previousMetrics[driverEl.id]?.progress) {
-                            Telemetry.updateDriverDisplay(driverEl, text, progress);
-                        }
-                    } catch (e) {
-                        console.error('Mutation observer error:', e);
-                    }
-                });
-                
-                observer.observe(timeEl, { childList: true, subtree: true, characterData: true });
-                State.observers.push(observer);
-            });
-        },
-        
-        initializeLeaderboard() {
-            const leaderboard = document.getElementById('leaderBoard');
-            if (!leaderboard) return;
-            
-            if (leaderboard.children.length) {
-                this.observeDrivers();
-                this.setupPeriodicCheck();
+        parseDriverData(originalLi) {
+            if (!originalLi || !originalLi.matches('li[id^="lbr-"]')) return null;
+            const nameEl = originalLi.querySelector('.name span');
+            const carEl = originalLi.querySelector('.car img');
+            const colorEl = originalLi.querySelector('.color');
+            const timeEl = originalLi.querySelector('.time');
+            const statusDiv = originalLi.querySelector('.status-wrap > div');
+            const dataId = originalLi.dataset.id;
+            const userId = dataId ? dataId.split('-')[1] : null;
+            if (!userId) { return null; }
+
+            const progressText = timeEl ? timeEl.textContent.trim() : '0%';
+            const progressPercentage = Utils.parseProgress(progressText);
+            let statusClass = 'unknown';
+
+            if (statusDiv) {
+                const classList = statusDiv.classList;
+                if (classList.contains('crashed')) {
+                    statusClass = 'crashed';
+                } else if (classList.contains('finished')) {
+                    statusClass = 'finished';
+                } else if (progressPercentage > 0 && progressPercentage < 100) {
+                     statusClass = 'racing';
+                 } else if (progressPercentage === 0) {
+                     statusClass = 'ready';
+                 }
             } else {
-                new MutationObserver((_, obs) => {
-                    if (leaderboard.children.length) {
-                        this.observeDrivers();
-                        this.setupPeriodicCheck();
-                        obs.disconnect();
-                    }
-                }).observe(leaderboard, { childList: true });
+                if (progressPercentage >= 100) { statusClass = 'finished'; }
+                else if (progressPercentage > 0) { statusClass = 'racing'; }
+                else { statusClass = 'ready'; }
             }
-        }
+
+            if (State.previousMetrics[userId]?.statusClass === 'finished' && statusClass !== 'crashed') {
+                 statusClass = 'finished';
+            }
+
+            return { userId, originalId: originalLi.id, name: nameEl ? nameEl.textContent.trim() : 'N/A', carImgRaw: carEl ? carEl.getAttribute('src') : '', carTitle: carEl ? carEl.title : 'Unknown Car', colorClass: colorEl ? colorEl.className.replace('color', '').trim() : 'color-default', statusClass, originalStatusText: progressText, progress: progressPercentage };
+        },
+        async updateTrackAndClassInfo() { let trackInfoUpdated = false; let classInfoUpdated = false; try { const infoElement = document.querySelector('div.track-info'); const trackHeader = document.querySelector('.drivers-list .title-black'); if (infoElement && infoElement.title) { const trackNameFromTitle = infoElement.title.trim(); const lengthMatch = infoElement.dataset.length?.match(/(\d+\.?\d*)/); const lapsMatch = trackHeader?.textContent.match(/(\d+)\s+laps?/i); const laps = lapsMatch ? parseInt(lapsMatch[1]) : (State.trackInfo.laps || 5); const length = lengthMatch ? parseFloat(lengthMatch[1]) : (State.trackInfo.length || 3.4); let trackId = State.trackInfo.id; let trackName = State.trackInfo.name; if (!trackId || trackNameFromTitle !== trackName) { if (!State.trackNameMap) { try { const apiKey = Config.get('apiKey'); if (apiKey) { State.trackNameMap = await APIManager.fetchTrackData(apiKey); } } catch (e) { State.trackNameMap = {}; } } if (State.trackNameMap) { const foundEntry = Object.entries(State.trackNameMap).find(([id, name]) => name.toLowerCase() === trackNameFromTitle.toLowerCase()); if (foundEntry) { trackId = parseInt(foundEntry[0], 10); trackName = foundEntry[1]; } else { trackName = trackNameFromTitle; trackId = null; } } } if (trackId !== State.trackInfo.id || laps !== State.trackInfo.laps || Math.abs(length - State.trackInfo.length) > 0.01 || trackName !== State.trackInfo.name) { State.trackInfo = { id: trackId, name: trackName, laps, length, get total() { return this.laps * this.length; } }; trackInfoUpdated = true; if (trackId !== State.trackInfo.id || laps !== State.trackInfo.laps || Math.abs(length - State.trackInfo.length) > 0.01) { State.resetRaceState(); } } } else { } const classElement = document.querySelector('div.banner div.class-letter'); const detectedClass = classElement ? classElement.textContent.trim().toUpperCase() : null; if (detectedClass && detectedClass !== State.currentRaceClass) { State.currentRaceClass = detectedClass; classInfoUpdated = true; } else if (!detectedClass) { } } catch (e) { } return trackInfoUpdated || classInfoUpdated; },
+        createDriverElement(driverData) { const item = document.createElement('div'); item.className = 'custom-driver-item'; item.dataset.originalId = driverData.originalId; item.dataset.userId = driverData.userId; const isSelf = driverData.userId === State.userId; if (isSelf) item.classList.add('is-self'); item.classList.add(`status-${driverData.statusClass}`); const absoluteCarImgUrl = Utils.makeAbsoluteUrl(driverData.carImgRaw); item.innerHTML = `<div class="driver-info-row"><div class="driver-color-indicator ${driverData.colorClass}"></div><img class="driver-car-img" src="${absoluteCarImgUrl}" alt="${driverData.carTitle}" title="${driverData.carTitle}"><div class="driver-name">${driverData.name}${isSelf ? '<span class="self-tag">(You)</span>' : ''}</div><div class="driver-telemetry-display"></div></div><div class="driver-details"></div>`; this.updateDriverElement(item, driverData); return item; },
+        updateDriverElement(element, driverData) { const driverId = driverData.userId; const isSelf = driverId === State.userId; const now = Date.now(); const detailsVisible = element.classList.contains('details-visible'); element.className = `custom-driver-item status-${driverData.statusClass} ${isSelf ? 'is-self' : ''} ${detailsVisible ? 'details-visible' : ''}`.trim().replace(/\s+/g, ' '); const colorIndicator = element.querySelector('.driver-color-indicator'); if (colorIndicator && !colorIndicator.classList.contains(driverData.colorClass)) colorIndicator.className = `driver-color-indicator ${driverData.colorClass}`; const carImg = element.querySelector('.driver-car-img'); const currentCarSrc = carImg ? carImg.getAttribute('src') : ''; const newCarSrc = Utils.makeAbsoluteUrl(driverData.carImgRaw); if (carImg && currentCarSrc !== newCarSrc) { carImg.src = newCarSrc; carImg.alt = driverData.carTitle; carImg.title = driverData.carTitle; } const nameDiv = element.querySelector('.driver-name'); const expectedNameHTML = `${driverData.name}${isSelf ? '<span class="self-tag">(You)</span>' : ''}`; if (nameDiv && nameDiv.innerHTML !== expectedNameHTML) { nameDiv.innerHTML = expectedNameHTML; } const telemetryDiv = element.querySelector('.driver-telemetry-display'); if (telemetryDiv) { let telemetryText = ''; let extraTelemetryText = ''; let telemetryColor = 'var(--telemetry-default-color)'; let stopAnimation = false; const raceStatusText = document.getElementById('infoSpot')?.textContent.trim().toLowerCase() ?? ''; const displayMode = Config.get('displayMode'); const speedUnit = Config.get('speedUnit'); if (driverData.statusClass === 'crashed') { telemetryText = '💥 CRASHED'; telemetryColor = 'var(--telemetry-decel-color)'; stopAnimation = true; } else if (driverData.statusClass === 'finished') { const finishTime = Utils.parseTime(driverData.originalStatusText); let avgSpeedFormatted = '---'; if (finishTime > 0 && State.trackInfo.total > 0) { const avgSpeed = (State.trackInfo.total / finishTime) * 3600; avgSpeedFormatted = Math.round(Utils.convertSpeed(avgSpeed, speedUnit)).toString(); } telemetryText = `🏁 ${avgSpeedFormatted} ${speedUnit}`; telemetryColor = 'var(--telemetry-default-color)'; stopAnimation = true; } else if (driverData.statusClass === 'ready' || raceStatusText === 'race starting') { if (displayMode === 'speed') telemetryText = `0 ${speedUnit}`; else if (displayMode === 'acceleration') telemetryText = `0.0 g`; else telemetryText = `0 ${speedUnit} | 0.0 g`; telemetryColor = 'var(--telemetry-default-color)'; stopAnimation = true; if (State.previousMetrics[driverId]) { State.previousMetrics[driverId].rawLapEstimate = null; State.previousMetrics[driverId].smoothedLapEstimate = null; } } else { const metrics = Telemetry.calculateDriverMetrics(driverId, driverData.progress, now); if (!metrics.noUpdate || State.previousMetrics[driverId]?.firstUpdate) { const targetSpeed = Math.round(Utils.convertSpeed(metrics.speed, speedUnit)); const targetAcc = metrics.acceleration; if (displayMode === 'speed') { telemetryText = `${targetSpeed} ${speedUnit}`; } else if (displayMode === 'acceleration') { telemetryText = `${targetAcc.toFixed(1)} g`; } else { telemetryText = `${targetSpeed} ${speedUnit} | ${targetAcc.toFixed(1)} g`; } telemetryColor = Telemetry.getTelemetryColor(targetAcc); if (Config.get('showLapEstimate') && driverData.progress < 100 && State.trackInfo.id) { const lapEstimateSeconds = Telemetry.calculateSmoothedLapEstimate(driverId, metrics); if (lapEstimateSeconds !== null && isFinite(lapEstimateSeconds) && lapEstimateSeconds > 0) { extraTelemetryText = ` <span class="lap-estimate">(~${Utils.formatTime(lapEstimateSeconds)})</span>`; } else { extraTelemetryText = ''; } } else { extraTelemetryText = ''; } if (Config.get('animateChanges') && !State.previousMetrics[driverId]?.firstUpdate) { const prevDriverState = State.previousMetrics[driverId]; const fromSpeed = (telemetryDiv._currentSpeed !== undefined) ? telemetryDiv._currentSpeed : Math.round(Utils.convertSpeed(prevDriverState?.lastDisplayedSpeed || 0, speedUnit)); const fromAcc = (telemetryDiv._currentAcc !== undefined) ? telemetryDiv._currentAcc : prevDriverState?.lastDisplayedAcceleration || 0; const duration = metrics.timeDelta; Telemetry.animateTelemetry(telemetryDiv, fromSpeed, targetSpeed, fromAcc, targetAcc, duration, displayMode, speedUnit, extraTelemetryText); } else { stopAnimation = true; } if(State.previousMetrics[driverId]) { State.previousMetrics[driverId].lastDisplayedSpeed = metrics.speed; State.previousMetrics[driverId].lastDisplayedAcceleration = targetAcc; } } else { telemetryText = telemetryDiv.innerHTML.split('<span class="lap-estimate">')[0].trim(); if (Config.get('showLapEstimate') && driverData.progress < 100 && State.trackInfo.id) { const lapEstimateSeconds = State.previousMetrics[driverId]?.smoothedLapEstimate; if (lapEstimateSeconds !== null && isFinite(lapEstimateSeconds) && lapEstimateSeconds > 0) { extraTelemetryText = ` <span class="lap-estimate">(~${Utils.formatTime(lapEstimateSeconds)})</span>`; } else { extraTelemetryText = ''; } } else { extraTelemetryText = ''; } telemetryDiv.innerHTML = telemetryText + extraTelemetryText; } } if (stopAnimation) { if (telemetryDiv._telemetryAnimationFrame) cancelAnimationFrame(telemetryDiv._telemetryAnimationFrame); telemetryDiv.innerHTML = telemetryText + extraTelemetryText; telemetryDiv.style.color = telemetryColor; telemetryDiv._currentSpeed = undefined; telemetryDiv._currentAcc = undefined; } } const detailsDiv = element.querySelector('.driver-details'); const driverState = State.previousMetrics[driverId]; if (detailsDiv) { const needsRebuild = !detailsDiv.innerHTML || element.dataset.lastStatus !== driverData.statusClass; if (needsRebuild) { element.dataset.lastStatus = driverData.statusClass; let localInfoHTML = `<p><strong>Progress:</strong> ${driverData.progress.toFixed(2)}%</p>`; if(driverState) { localInfoHTML += `<p><strong>Lap:</strong> ${driverState.currentLap || '-'}/${State.trackInfo.laps || '-'}</p>`; localInfoHTML += `<p><strong>Lap Progress:</strong> ${driverState.progressInLap !== undefined ? driverState.progressInLap.toFixed(1) : '-'}%</p>`; localInfoHTML += `<p><strong>Speed (Calc MPH):</strong> ${driverState.reportedSpeed !== undefined ? driverState.reportedSpeed.toFixed(1) : '-'}</p>`; localInfoHTML += `<p><strong>Accel (Calc g):</strong> ${driverState.acceleration !== undefined ? driverState.acceleration.toFixed(3) : '-'}</p>`; if(Config.get('showLapEstimate') && driverState.smoothedLapEstimate !== null && isFinite(driverState.smoothedLapEstimate) && State.trackInfo.id) { localInfoHTML += `<p><strong>Est. Lap Time:</strong> ${Utils.formatTime(driverState.smoothedLapEstimate)} (Raw: ${driverState.rawLapEstimate !== null && isFinite(driverState.rawLapEstimate) ? Utils.formatTime(driverState.rawLapEstimate) : '--:--'})</p>`; } } const apiStatsHTML = Config.get('fetchApiStatsOnClick') ? `<div class="api-stats-container"><p>Skill: <span class="api-stat stat-skill">...</span></p><p>Points: <span class="api-stat stat-points">...</span></p><p>Races: <span class="api-stat stat-races-entered">...</span> (<span class="api-stat stat-races-won">...</span> Wins)</p><p>Win Rate: <span class="api-stat stat-win-rate">...</span></p><span class="api-stat-error-msg"></span></div>` : ''; detailsDiv.innerHTML = `<p><strong>User:</strong> ${driverData.name} [<a href="/profiles.php?XID=${driverId}" target="_blank" rel="noopener noreferrer" title="View Profile">${driverId}</a>] ${isSelf ? '<strong>(You)</strong>':''}</p> <p><strong>Car:</strong> ${driverData.carTitle}</p> <p><strong>Status:</strong> <span style="text-transform: capitalize;">${driverData.statusClass}</span> ${driverData.originalStatusText && !['finished', 'crashed','ready'].includes(driverData.statusClass) ? `(${driverData.originalStatusText})` : ''}</p> ${localInfoHTML} ${apiStatsHTML} <p><em>Original ID: ${driverData.originalId}</em></p>`; if (detailsVisible && Config.get('fetchApiStatsOnClick') && userId && !element.hasAttribute('data-stats-loaded')) { setTimeout(() => APIManager.fetchAndDisplayRacingStats(element, userId), 0); } } } if (driverState) driverState.statusClass = driverData.statusClass; },
+        stableUpdateCustomList() { if (State.isUpdating || !State.customUIContainer || !State.originalLeaderboard || !document.body.contains(State.originalLeaderboard)) { return; } State.isUpdating = true; const savedScrollTop = State.customUIContainer.scrollTop; const hadFocus = document.activeElement === State.customUIContainer || State.customUIContainer.contains(document.activeElement); const newDriversData = Array.from(State.originalLeaderboard.querySelectorAll(':scope > li[id^="lbr-"]')).map(this.parseDriverData).filter(data => data !== null); const currentElementsMap = new Map(); State.customUIContainer.querySelectorAll(':scope > .custom-driver-item[data-user-id]').forEach(el => { currentElementsMap.set(el.dataset.userId, el); }); const newElementsToProcess = new Map(); newDriversData.forEach(driverData => { let element = currentElementsMap.get(driverData.userId); if (element) { this.updateDriverElement(element, driverData); newElementsToProcess.set(driverData.userId, { data: driverData, element: element }); currentElementsMap.delete(driverData.userId); } else { element = this.createDriverElement(driverData); newElementsToProcess.set(driverData.userId, { data: driverData, element: element }); } }); currentElementsMap.forEach((elementToRemove, removedUserId) => { if(State.previousMetrics[removedUserId]) { delete State.previousMetrics[removedUserId]; delete State.lastUpdateTimes[removedUserId]; } if (elementToRemove._telemetryAnimationFrame) cancelAnimationFrame(elementToRemove._telemetryAnimationFrame); elementToRemove.remove(); }); let previousElement = null; newDriversData.forEach((driverData, index) => { const { element } = newElementsToProcess.get(driverData.userId); const expectedPreviousSibling = previousElement; const actualPreviousSibling = element.previousElementSibling; if (actualPreviousSibling !== expectedPreviousSibling) { State.customUIContainer.insertBefore(element, expectedPreviousSibling ? expectedPreviousSibling.nextSibling : State.customUIContainer.firstChild); } previousElement = element; }); if (hadFocus && document.body.contains(State.customUIContainer)) { State.customUIContainer.scrollTop = savedScrollTop; } State.isUpdating = false; },
+        setupPeriodicCheck() { }
     };
 
-    // Main application
-    const App = {
-        initialize() {
-            try {
-                // Initialize configuration
-                Config.load();
-                
-                // Find the racing container
-                const container = document.querySelector('.cont-black');
-                if (!container) {
-                    console.error('Racing container not found');
-                    return;
-                }
-                
-                // Initialize UI
-                UI.initializeUI(container);
-                
-                // Update track information
-                RaceManager.updateTrackInfo();
-                
-                // Initialize telemetry on the leaderboard
-                RaceManager.initializeLeaderboard();
-            } catch (e) {
-                console.error('Initialization failed:', e);
-            }
-        }
-    };
+    function toggleDetails(event) { if (event.target.tagName === 'A') return; const driverItem = event.target.closest('.custom-driver-item'); if (driverItem && !State.isUpdating) { const userId = driverItem.dataset.userId; const isOpening = !driverItem.classList.contains('details-visible'); driverItem.classList.toggle('details-visible'); if (isOpening && Config.get('fetchApiStatsOnClick') && userId) { if (!driverItem.hasAttribute('data-stats-loaded')) { setTimeout(() => APIManager.fetchAndDisplayRacingStats(driverItem, userId), 50); } } } }
 
-    // Setup observers for page changes
-    const racingUpdatesObserver = new MutationObserver(mutations => {
-        mutations.forEach(mutation => {
-            mutation.addedNodes.forEach(node => {
-                if (node.nodeType === 1 && node.id === 'racingupdates') {
-                    App.initialize();
-                }
-            });
-            mutation.removedNodes.forEach(node => {
-                if (node.nodeType === 1 && node.id === 'racingupdates') {
-                    State.resetRace();
-                }
-            });
-        });
-    });
+    function cleanupScriptState(reason = "Unknown") { if (State.observers.length > 0) { State.observers.forEach(obs => obs.disconnect()); State.observers = []; } document.getElementById('custom-driver-list-container')?.remove(); document.getElementById('telemetryControlsContainer')?.remove(); State.customUIContainer = null; State.clearPopupsAndFullReset(); State.isRaceViewActive = false; }
+    async function initialize() { if (State.isInitialized) { return true; } try { const userInput = document.getElementById('torn-user'); if (!userInput) throw new Error("User input not found."); const userData = JSON.parse(userInput.value); State.userId = userData.id?.toString(); if (!State.userId) throw new Error("User ID not found."); State.originalLeaderboard = document.getElementById('leaderBoard'); const originalScrollbarContainer = document.getElementById('drivers-scrollbar'); if (!State.originalLeaderboard || !originalScrollbarContainer) { throw new Error("Leaderboard elements not found."); } if (!State.customUIContainer) { const existingContainer = document.getElementById('custom-driver-list-container'); if(existingContainer) { State.customUIContainer = existingContainer; State.customUIContainer.removeEventListener('click', toggleDetails); } else { State.customUIContainer = document.createElement('div'); State.customUIContainer.id = 'custom-driver-list-container'; originalScrollbarContainer.parentNode.insertBefore(State.customUIContainer, originalScrollbarContainer); } State.customUIContainer.addEventListener('click', toggleDetails); } UI.initializeControls(State.customUIContainer); await RaceManager.updateTrackAndClassInfo(); RaceManager.stableUpdateCustomList(); if (State.observers.length === 0 && document.body.contains(State.originalLeaderboard)) { const observer = new MutationObserver(() => { window.requestAnimationFrame(async () => { if (State.isUpdating || !State.isInitialized) return; await RaceManager.updateTrackAndClassInfo(); RaceManager.stableUpdateCustomList(); }); }); const observerConfig = { childList: true, subtree: true, attributes: true, characterData: true }; observer.observe(State.originalLeaderboard, observerConfig); State.observers.push(observer); } originalScrollbarContainer.style.display = Config.get('hideOriginalList') ? 'none' : 'block'; State.isInitialized = true; return true; } catch (e) { Utils.showNotification(`Init Error: ${e.message}`, "error"); cleanupScriptState("Initialization error"); return false; } }
 
-    // Start observing and initializing
-    racingUpdatesObserver.observe(document.body, { childList: true, subtree: true });
-    
-    // Initialize on page load
-    if (document.readyState === 'complete') {
-        App.initialize();
-    } else {
-        window.addEventListener('load', App.initialize);
-    }
-    
-    // Handle page navigation
-    window.addEventListener('popstate', App.initialize);
+    let currentHref = document.location.href;
+    const pageObserver = new MutationObserver(() => { if (currentHref !== document.location.href) { currentHref = document.location.href; if (State.isInitialized) { cleanupScriptState("Page Navigation"); } } });
+    const raceViewObserver = new MutationObserver((mutations) => { let raceViewEntered = false; let raceViewExited = false; for (const mutation of mutations) { if (mutation.addedNodes.length) { for (const node of mutation.addedNodes) { if (node.nodeType === 1 && (node.id === 'racingupdates' || node.querySelector('#racingupdates'))) { raceViewEntered = true; break; } } } if (raceViewEntered) break; if (mutation.removedNodes.length) { for (const node of mutation.removedNodes) { if (node.nodeType === 1 && node.id === 'racingupdates') { raceViewExited = true; break; } } } if (raceViewExited) break; } if (raceViewEntered && !State.isRaceViewActive) { State.isRaceViewActive = true; setTimeout(initialize, 100); } else if (raceViewExited && State.isRaceViewActive) { State.isRaceViewActive = false; if (State.isInitialized) { cleanupScriptState("Exited Race View"); } } });
+
+    function startObservers() { pageObserver.observe(document.body, { childList: true, subtree: true }); raceViewObserver.observe(document.body, { childList: true, subtree: true }); if (document.getElementById('racingupdates')) { if (!State.isRaceViewActive) { State.isRaceViewActive = true; setTimeout(initialize, 50); } } else { State.isRaceViewActive = false; } }
+    if (document.readyState === 'complete' || document.readyState === 'interactive') { startObservers(); } else { document.addEventListener('DOMContentLoaded', startObservers); }
+    window.addEventListener('unload', () => { pageObserver.disconnect(); raceViewObserver.disconnect(); if (State.isInitialized) { cleanupScriptState("Window Unload"); } });
+
 })();
