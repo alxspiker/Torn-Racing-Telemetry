@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn Racing Telemetry
 // @namespace    https://www.torn.com/profiles.php?XID=2782979
-// @version      3.1.3
+// @version      3.1.4
 // @description  Enhanced Torn Racing UI: Telemetry, driver stats, advanced stats panel, history tracking, and race results export.
 // @match        https://www.torn.com/page.php?sid=racing*
 // @match        https://www.torn.com/loader.php?sid=racing*
@@ -21,9 +21,8 @@
 (function() {
     'use strict';
 
-    // --- Script Information (Editable) ---
     const ScriptInfo = {
-        version: typeof GM_info !== 'undefined' ? GM_info.script.version : '3.1.3',
+        version: '3.1.4',
         author: "TheProgrammer",
         contactId: "2782979",
         contactUrl: function() { return `https://www.torn.com/profiles.php?XID=${this.contactId}`; },
@@ -34,19 +33,17 @@
             "Use the 'Clear API Key' button specifically to remove the key.",
             "The History Panel relies on checking your displayed Racing Skill/Class periodically. It fetches points via the API if a key is provided. Enable/disable in Settings.",
             "The Stats Panel requires an API key to fetch historical race data and track/car information. Enable/disable in Settings.",
-            "Race results export (💾 button) appears when the race finishes.",
+            "Race results export (💾 button) appears when the race finishes. Added CSV and Plain Text options.",
             "Chart rendering uses the Chart.js library.",
             "Telemetry display options (Speed, Accel, Progress) are now toggles in Settings."
         ]
     };
-    // --- End Script Information ---
 
     if (window.racingCustomUITelemetryHasRun) return;
     window.racingCustomUITelemetryHasRun = true;
 
     const Config = {
         defaults: {
-            // Replaced displayMode with telemetryDisplayOptions
             telemetryDisplayOptions: ['speed'],
             colorCode: true, animateChanges: true, speedUnit: 'mph',
             minUpdateInterval: 300, telemetryVisible: true, hideOriginalList: true, showLapEstimate: true,
@@ -69,7 +66,6 @@
                 this.data = {...this.defaults};
                 this.data.apiKey = GM_getValue(this.apiKeyStorageKey, '');
             }
-            // Ensure all defaults are present if loading old config
             for (const key in this.defaults) {
                 if (!(key in this.data)) {
                     this.data[key] = this.defaults[key];
@@ -192,12 +188,12 @@
         .driver-details p { margin: 5px 0; line-height: 1.4; } .driver-details strong { color: #ddd; } .driver-details a { color: var(--accent-color); text-decoration: none; } .driver-details a:hover { text-decoration: underline; } .custom-driver-item.details-visible .driver-details { max-height: 350px; opacity: 1; padding-top: 8px; padding-bottom: 8px; margin-top: 6px; }
         .api-stats-container { border-top: 1px dashed var(--border-color); margin-top: 8px; padding-top: 8px; } .api-stats-container.loading .api-stat { color: var(--api-loading-color); font-style: italic; } .api-stats-container.error .api-stat-error-msg, .api-stats-container.no-key .api-stat-error-msg { color: var(--api-error-color); display: block; font-style: italic; } .api-stats-container.no-key .api-stat-error-msg { color: var(--api-info-color); } .api-stat-error-msg { display: none; } .api-stats-container p { margin: 3px 0; } .api-stat { font-weight: bold; color: var(--text-color); }
         #telemetryControlsContainer { margin: 10px 0 5px 0; justify-content: flex-end; gap: 5px; }
-        .telemetry-download-button, .telemetry-info-button, .telemetry-history-button, .telemetry-stats-button, .telemetry-settings-button { background: var(--background-light); color: var(--text-color); border: 1px solid var(--border-color); padding: 6px 12px; text-align: center; cursor: pointer; transition: all 0.2s ease; font-size: 13px; border-radius: 4px; display: inline-block; } /* Ensure buttons are inline-block */
+        .telemetry-download-button, .telemetry-info-button, .telemetry-history-button, .telemetry-stats-button, .telemetry-settings-button { background: var(--background-light); color: var(--text-color); border: 1px solid var(--border-color); padding: 6px 12px; text-align: center; cursor: pointer; transition: all 0.2s ease; font-size: 13px; border-radius: 4px; display: inline-block; }
         .telemetry-info-button:hover, .telemetry-history-button:hover, .telemetry-stats-button:hover, .telemetry-settings-button:hover, .telemetry-download-button:hover { background-color: var(--accent-color); color: var(--background-dark); }
         .telemetry-history-button:hover { background-color: var(--history-color); color: var(--background-dark); }
         .telemetry-info-button:hover { background-color: var(--info-color); color: var(--background-dark); }
         .telemetry-download-button:hover { background-color: var(--download-color); color: white; }
-        .telemetry-download-button { display: none; } /* Hidden by default */
+        .telemetry-download-button { display: none; }
         .settings-popup, .stats-panel, .history-panel, .info-panel, .download-popup { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.7); display: flex; justify-content: center; align-items: center; z-index: 1000; backdrop-filter: blur(3px); }
         .stats-panel, .history-panel, .info-panel, .download-popup { z-index: 1010; scrollbar-width: thin; scrollbar-color: #555 var(--background-dark); }
         .settings-popup-content, .stats-panel-content, .history-panel-content, .info-panel-content, .download-popup-content { background: var(--background-dark); border-radius: 10px; border: 1px solid var(--border-color); width: 90%; max-height: 90vh; overflow-y: auto; padding: 20px; box-shadow: 0 5px 20px rgba(0, 0, 0, 0.3); }
@@ -226,7 +222,7 @@
         .download-content button { background: var(--background-light); color: var(--text-color); border: 1px solid var(--border-color); padding: 8px 15px; border-radius: 4px; cursor: pointer; transition: all 0.2s ease; }
         .download-content button:hover { background: var(--accent-color); color: var(--background-dark); }
         .download-content button.primary { background: var(--download-color); color: white; }
-        .download-content button.primary:hover { background: #7B1FA2; } /* Darker purple */
+        .download-content button.primary:hover { background: #7B1FA2; }
         .info-content h3 { color: var(--primary-color); margin-top: 20px; margin-bottom: 10px; font-size: 1.1em;}
         .info-content p, .info-content ul { margin-bottom: 10px; line-height: 1.5; color: var(--text-color); }
         .info-content ul { list-style: disc; padding-left: 25px; }
@@ -248,10 +244,10 @@
         .history-content .change-positive { color: #81C784; }
         .history-content .change-negative { color: #E57373; }
         .history-content .change-neutral { color: #90A4AE; }
-        .settings-item { margin-bottom: 15px; display: flex; flex-direction: column; } /* Reduced margin */
+        .settings-item { margin-bottom: 15px; display: flex; flex-direction: column; }
         .settings-item label:not(.switch) { margin-bottom: 8px; color: var(--text-color); font-weight: bold; display: block; }
         .settings-item .telemetry-options-group { display: flex; flex-direction: column; gap: 10px; margin-top: 5px; border: 1px solid var(--border-color); border-radius: 4px; padding: 10px; background: var(--background-light);}
-        .settings-item .telemetry-options-group .toggle-container { margin-bottom: 0; } /* Remove margin inside group */
+        .settings-item .telemetry-options-group .toggle-container { margin-bottom: 0; }
         .settings-item select, .settings-item input[type=number], .settings-item input[type=text] { padding: 8px; background: var(--background-light); border: 1px solid var(--border-color); border-radius: 4px; color: var(--text-color); width: 100%; box-sizing: border-box; }
         .settings-item input[type=text] { font-family: monospace; }
         .toggle-container { padding: 0; display: flex; align-items: center; justify-content: space-between; background: none; border: none; } .toggle-container label:first-child { margin-bottom: 0; } .settings-buttons { display: flex; justify-content: space-between; margin-top: 25px; padding-top: 15px; border-top: 1px solid var(--border-color); gap: 10px; flex-wrap: wrap; } .settings-btn { padding: 10px 15px; border-radius: 4px; border: none; cursor: pointer; background: var(--background-light); color: var(--text-color); transition: all 0.2s ease; flex-grow: 1; } .settings-btn:hover { background: var(--accent-color); color: var(--background-dark); } .settings-btn.primary { background: var(--primary-color); color: white; } .settings-btn.primary:hover { background: #388E3C; } .settings-btn.danger { background-color: var(--danger-color); color: white; } .settings-btn.danger:hover { background-color: var(--danger-hover-color); } .settings-data-buttons { display: flex; gap: 10px; width: 100%; margin-top: 10px; } .switch { position: relative; display: inline-block; width: 45px; height: 24px; flex-shrink: 0;} .switch input { opacity: 0; width: 0; height: 0; } .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #4d4d4d; transition: .3s; border-radius: 12px; } .slider:before { position: absolute; content: ""; height: 20px; width: 20px; left: 3px; bottom: 2px; background-color: #f4f4f4; transition: .3s; border-radius: 50%; } input:checked + .slider { background-color: var(--primary-color); } input:checked + .slider:before { transform: translateX(21px); }
@@ -291,7 +287,17 @@
              } catch(e) {
                 return null;
              }
-         }
+         },
+         escapeCSVField(field) {
+            if (field === null || field === undefined) {
+                return '';
+            }
+            const stringField = String(field);
+            if (stringField.includes(',') || stringField.includes('"') || stringField.includes('\n')) {
+                return `"${stringField.replace(/"/g, '""')}"`;
+            }
+            return stringField;
+        }
     };
 
     const Telemetry = {
@@ -319,7 +325,6 @@
                     <div class="settings-item"> <div class="toggle-container"> <label for="historyEnabled">Enable History Panel & Logging</label> <label class="switch"> <input type="checkbox" id="historyEnabled"> <span class="slider"></span> </label> </div> </div>
                     <div class="settings-item"> <div class="toggle-container"> <label for="statsPanelEnabled">Enable Stats Panel</label> <label class="switch"> <input type="checkbox" id="statsPanelEnabled"> <span class="slider"></span> </label> </div> </div>
                     <hr style="border: none; border-top: 1px solid var(--border-color); margin: 20px 0;">
-
                     <div class="settings-item">
                          <label>Telemetry Display Options:</label>
                          <div class="telemetry-options-group">
@@ -328,7 +333,6 @@
                             <div class="toggle-container"> <label for="telemetryShowProgress">Show Progress %</label> <label class="switch"> <input type="checkbox" id="telemetryShowProgress"> <span class="slider"></span> </label> </div>
                          </div>
                     </div>
-
                     <div class="settings-item"> <label for="speedUnit">Speed Unit</label> <select id="speedUnit"> <option value="mph">mph</option> <option value="kmh">km/h</option> </select> </div>
                     <div class="settings-item"> <div class="toggle-container"> <label for="colorCode">Color Code Telemetry (by Accel)</label> <label class="switch"> <input type="checkbox" id="colorCode"> <span class="slider"></span> </label> </div> </div>
                     <div class="settings-item"> <div class="toggle-container"> <label for="animateChanges">Animate Changes (Simple Cases)</label> <label class="switch"> <input type="checkbox" id="animateChanges"> <span class="slider"></span> </label> </div> <small style="color: #aaa; margin-top: 5px;">Animation only applies if just Speed, just Accel, or only Speed & Accel are shown.</small></div>
@@ -353,7 +357,6 @@
                     </div>
                 </div>`;
 
-            // Set initial states for toggles
             content.querySelector('#historyEnabled').checked = Config.get('historyEnabled');
             content.querySelector('#statsPanelEnabled').checked = Config.get('statsPanelEnabled');
             content.querySelector('#telemetryShowSpeed').checked = displayOptions.includes('speed');
@@ -381,14 +384,12 @@
             content.querySelector('#saveSettings').addEventListener('click', () => {
                 const historyWasEnabled = Config.get('historyEnabled');
 
-                // Save telemetry display options
                 const selectedOptions = [];
                 if (content.querySelector('#telemetryShowSpeed').checked) selectedOptions.push('speed');
                 if (content.querySelector('#telemetryShowAcceleration').checked) selectedOptions.push('acceleration');
                 if (content.querySelector('#telemetryShowProgress').checked) selectedOptions.push('progress');
                 Config.set('telemetryDisplayOptions', selectedOptions);
 
-                // Save other settings
                 Config.set('historyEnabled', content.querySelector('#historyEnabled').checked);
                 Config.set('statsPanelEnabled', content.querySelector('#statsPanelEnabled').checked);
                 Config.set('speedUnit', content.querySelector('#speedUnit').value);
@@ -419,7 +420,7 @@
                     if(State.historyCheckIntervalId) clearInterval(State.historyCheckIntervalId);
                     State.historyCheckIntervalId = null;
                 }
-                RaceManager.stableUpdateCustomList(); // Update list to reflect new telemetry options
+                RaceManager.stableUpdateCustomList();
             });
 
             content.querySelector('#clearData').addEventListener('click', () => {
@@ -446,7 +447,7 @@
             State.settingsPopupInstance = popup;
         },
         async createAdvancedStatsPanel() {
-            if (!Config.get('statsPanelEnabled')) return; // Check if enabled
+            if (!Config.get('statsPanelEnabled')) return;
             if (State.advancedStatsPanelInstance) State.advancedStatsPanelInstance.remove();
             State.destroyActiveCharts();
             const popup = document.createElement('div');
@@ -717,7 +718,7 @@
         },
         parseCurrentUserCarStats() { const carDiv = document.querySelector('div.car-selected.left'); if (!carDiv) return null; try { const nameEl = carDiv.querySelector('.model p:first-child'); const imgEl = carDiv.querySelector('.model .img img.torn-item'); const name = nameEl ? nameEl.textContent.trim() : 'Unknown Car'; let id = null; if (imgEl && imgEl.src) { const idMatch = imgEl.src.match(/\/items\/(\d+)\//); if (idMatch) id = parseInt(idMatch[1], 10); } const stats = {}; const statItems = carDiv.querySelectorAll('ul.properties-wrap li'); statItems.forEach(li => { const titleEl = li.querySelector('.title'); const progressBarEl = li.querySelector('.progressbar-wrap'); if (titleEl && progressBarEl && progressBarEl.title) { const statName = titleEl.textContent.trim(); const titleAttr = progressBarEl.title; const valueMatch = titleAttr.match(/^(\d+)\s*\(/); if (valueMatch) { stats[statName] = parseInt(valueMatch[1], 10); } } }); if (Object.keys(stats).length === 0) { return { name, id, stats: null }; } return { name, id, stats }; } catch (e) { return null; } },
         createHistoryPanel() {
-            if (!Config.get('historyEnabled')) return; // Check if enabled
+            if (!Config.get('historyEnabled')) return;
             if (State.historyPanelInstance) State.historyPanelInstance.remove();
             State.destroyActiveCharts();
             const popup = document.createElement('div');
@@ -888,6 +889,8 @@
                             <select id="downloadFormat">
                                 <option value="html">HTML Table</option>
                                 <option value="md">Markdown Table</option>
+                                <option value="csv">CSV (Comma Separated)</option>
+                                <option value="txt">Plain Text</option>
                                 <option value="json">JSON Data</option>
                             </select>
                         </div>
@@ -924,6 +927,16 @@
                             fileExt = 'md';
                             mimeType = 'text/markdown';
                             break;
+                         case 'csv':
+                            dataString = DataExporter.formatAsCSV();
+                            fileExt = 'csv';
+                            mimeType = 'text/csv';
+                            break;
+                        case 'txt':
+                            dataString = DataExporter.formatAsPlainText();
+                            fileExt = 'txt';
+                            mimeType = 'text/plain';
+                            break;
                         case 'json':
                         default:
                             dataString = DataExporter.formatAsJSON();
@@ -948,7 +961,6 @@
             downloadBtn.addEventListener('click', () => performAction('download'));
             copyBtn.addEventListener('click', () => performAction('copy'));
 
-
             popup.appendChild(content);
             document.body.appendChild(popup);
             State.downloadPopupInstance = popup;
@@ -962,7 +974,7 @@
 
             if (historyBtn) historyBtn.style.display = Config.get('historyEnabled') ? 'inline-block' : 'none';
             if (statsBtn) statsBtn.style.display = Config.get('statsPanelEnabled') ? 'inline-block' : 'none';
-            if (downloadBtn) downloadBtn.style.display = State.raceFinished ? 'inline-block' : 'none'; // Changed '' to 'inline-block'
+            if (downloadBtn) downloadBtn.style.display = State.raceFinished ? 'inline-block' : 'none';
         },
         initializeControls() {
             if (!State.controlsContainer) return;
@@ -979,7 +991,7 @@
              historyButton.className = 'telemetry-history-button';
              historyButton.textContent = '📜 History';
              historyButton.title = 'View Your Racing Stats History';
-             historyButton.style.display = 'none'; // Initially hidden
+             historyButton.style.display = 'none';
              historyButton.addEventListener('click', () => { this.createHistoryPanel(); });
              State.controlsContainer.appendChild(historyButton);
 
@@ -987,7 +999,7 @@
             statsButton.className = 'telemetry-stats-button';
             statsButton.textContent = '📊 Stats';
             statsButton.title = 'Open Advanced Race Statistics';
-            statsButton.style.display = 'none'; // Initially hidden
+            statsButton.style.display = 'none';
             statsButton.addEventListener('click', () => {
                 RaceManager.updateTrackAndClassInfo().then(() => { this.createAdvancedStatsPanel(); })
                 .catch(e => { Utils.showNotification("Error getting latest track/class info.", "error"); });
@@ -998,7 +1010,7 @@
              downloadButton.className = 'telemetry-download-button';
              downloadButton.textContent = '💾 Export';
              downloadButton.title = 'Export Race Results';
-             downloadButton.style.display = 'none'; // Start hidden
+             downloadButton.style.display = 'none';
              downloadButton.addEventListener('click', () => { this.createDownloadPopup(); });
              State.controlsContainer.appendChild(downloadButton);
 
@@ -1112,7 +1124,7 @@
             ${tableRows}
         </tbody>
     </table>
-    <p><small>Exported by Torn Racing Telemetry Script</small></p>
+    <p><small>Exported by Torn Racing Telemetry Script v${ScriptInfo.version}</small></p>
 </body>
 </html>`;
         },
@@ -1127,8 +1139,42 @@
                 const status = r.status === 'finished' ? r.finalTimeOrStatus : r.status.toUpperCase();
                 md += `| ${r.position} | ${driverLink} | ${r.car} | ${status} |\n`;
             });
-            md += `\n*Exported by Torn Racing Telemetry Script*`;
+            md += `\n*Exported by Torn Racing Telemetry Script v${ScriptInfo.version}*`;
             return md;
+        },
+         formatAsCSV() {
+            const data = this.getFinalData();
+            const esc = Utils.escapeCSVField;
+            const header = ["Position", "Driver Name", "Driver ID", "Car Name", "Status", "Final Time/Status"];
+            const rows = data.results.map(r => [
+                r.position,
+                r.name,
+                r.userId,
+                r.car,
+                r.status,
+                r.status === 'finished' ? r.finalTimeOrStatus : r.status.toUpperCase()
+            ].map(esc).join(','));
+
+            let csvString = `# Torn Race Results\n`;
+            csvString += `# Track: ${esc(data.trackInfo.name || 'Unknown')} (${data.trackInfo.laps} Laps, ${data.trackInfo.length} Miles)\n`;
+            csvString += `# Exported: ${new Date().toISOString()}\n`;
+            csvString += `# Script Version: ${ScriptInfo.version}\n`;
+            csvString += header.map(esc).join(',') + '\n';
+            csvString += rows.join('\n');
+            return csvString;
+        },
+        formatAsPlainText() {
+            const data = this.getFinalData();
+            let txt = `Torn Race Results\n`;
+            txt += `Track: ${data.trackInfo.name || 'Unknown'} (${data.trackInfo.laps} Laps, ${data.trackInfo.length} Miles)\n`;
+            txt += `--------------------------------------------------\n`;
+            data.results.forEach(r => {
+                const status = r.status === 'finished' ? r.finalTimeOrStatus : r.status.toUpperCase();
+                txt += `${String(r.position).padStart(3)}. ${r.name} [${r.userId}] (${r.car}) - ${status}\n`;
+            });
+            txt += `--------------------------------------------------\n`;
+            txt += `Exported by Torn Racing Telemetry Script v${ScriptInfo.version}\n`;
+            return txt;
         },
         formatAsJSON() {
              const data = this.getFinalData();
@@ -1241,7 +1287,7 @@
             const telemetryDiv = element.querySelector('.driver-telemetry-display');
             if (telemetryDiv) {
                 let telemetryText = ''; let extraTelemetryText = ''; let telemetryColor = 'var(--telemetry-default-color)'; let stopAnimation = false;
-                const displayOptions = Config.get('telemetryDisplayOptions') || []; // Default to empty array if undefined
+                const displayOptions = Config.get('telemetryDisplayOptions') || [];
                 const speedUnit = Config.get('speedUnit');
 
                 if (driverData.statusClass === 'crashed') { telemetryText = '💥 CRASHED'; telemetryColor = 'var(--telemetry-decel-color)'; stopAnimation = true; if (driverState) { driverState.rawLapEstimate = null; driverState.smoothedLapEstimate = null; } }
@@ -1256,7 +1302,7 @@
                      stopAnimation = true;
                      if (driverState) { driverState.rawLapEstimate = null; driverState.smoothedLapEstimate = null; }
                 }
-                else { // Racing state
+                else {
                     const metrics = Telemetry.calculateDriverMetrics(driverId, driverData.progress, now);
                     if (!metrics.noUpdate || driverState?.firstUpdate) {
                         const targetSpeed = Utils.convertSpeed(metrics.speed, speedUnit);
@@ -1272,7 +1318,6 @@
 
                         if (Config.get('showLapEstimate') && driverData.progress < 100 && State.trackInfo.id && driverState) { const lapEstimateSeconds = Telemetry.calculateSmoothedLapEstimate(driverId, metrics); if (lapEstimateSeconds !== null && isFinite(lapEstimateSeconds) && lapEstimateSeconds > 0) { extraTelemetryText = ` <span class="lap-estimate">(~${Utils.formatTime(lapEstimateSeconds)})</span>`; } else { extraTelemetryText = ''; } } else { extraTelemetryText = ''; }
 
-                        // Determine if simple animation is possible
                         const canAnimate = Config.get('animateChanges') && driverState && !driverState.firstUpdate &&
                                           ((displayOptions.length === 1 && displayOptions[0] === 'speed') ||
                                            (displayOptions.length === 1 && displayOptions[0] === 'acceleration') ||
@@ -1292,10 +1337,10 @@
                             stopAnimation = true;
                         }
                         if (driverState) { driverState.lastDisplayedSpeed = metrics.speed; driverState.lastDisplayedAcceleration = targetAcc; }
-                    } else { // No metric update, just update extra text if needed
-                        telemetryText = telemetryDiv.innerHTML.split('<span class="lap-estimate">')[0].trim(); // Keep existing text
+                    } else {
+                        telemetryText = telemetryDiv.innerHTML.split('<span class="lap-estimate">')[0].trim();
                         if (Config.get('showLapEstimate') && driverData.progress < 100 && State.trackInfo.id && driverState) { const lapEstimateSeconds = driverState.smoothedLapEstimate; if (lapEstimateSeconds !== null && isFinite(lapEstimateSeconds) && lapEstimateSeconds > 0) { extraTelemetryText = ` <span class="lap-estimate">(~${Utils.formatTime(lapEstimateSeconds)})</span>`; } else { extraTelemetryText = ''; } } else { extraTelemetryText = ''; }
-                        telemetryDiv.innerHTML = telemetryText + extraTelemetryText; // Update only extra text potentially
+                        telemetryDiv.innerHTML = telemetryText + extraTelemetryText;
                     }
                 }
                 if (stopAnimation) { if (telemetryDiv._telemetryAnimationFrame) cancelAnimationFrame(telemetryDiv._telemetryAnimationFrame); telemetryDiv.innerHTML = telemetryText + extraTelemetryText; telemetryDiv.style.color = telemetryColor; telemetryDiv._currentSpeed = undefined; telemetryDiv._currentAcc = undefined; }
@@ -1555,7 +1600,7 @@
                 State.observers.push(observer);
             }
 
-            RaceManager.stableUpdateCustomList(); // Initial check for finished state
+            RaceManager.stableUpdateCustomList();
 
             return true;
         } catch (e) { Utils.showNotification(`Init Error: ${e.message}`, "error"); cleanupScriptState("Initialization error"); return false; }
