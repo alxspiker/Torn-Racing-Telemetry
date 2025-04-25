@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn Racing Telemetry
 // @namespace    https://www.torn.com/profiles.php?XID=2782979
-// @version      3.1.2
+// @version      3.1.3
 // @description  Enhanced Torn Racing UI: Telemetry, driver stats, advanced stats panel, history tracking, and race results export.
 // @match        https://www.torn.com/page.php?sid=racing*
 // @match        https://www.torn.com/loader.php?sid=racing*
@@ -23,7 +23,7 @@
 
     // --- Script Information (Editable) ---
     const ScriptInfo = {
-        version: typeof GM_info !== 'undefined' ? GM_info.script.version : '3.1.2', // Attempts to get version automatically
+        version: typeof GM_info !== 'undefined' ? GM_info.script.version : '3.1.3',
         author: "TheProgrammer",
         contactId: "2782979",
         contactUrl: function() { return `https://www.torn.com/profiles.php?XID=${this.contactId}`; },
@@ -36,6 +36,7 @@
             "The Stats Panel requires an API key to fetch historical race data and track/car information. Enable/disable in Settings.",
             "Race results export (💾 button) appears when the race finishes.",
             "Chart rendering uses the Chart.js library.",
+            "Telemetry display options (Speed, Accel, Progress) are now toggles in Settings."
         ]
     };
     // --- End Script Information ---
@@ -45,7 +46,9 @@
 
     const Config = {
         defaults: {
-            displayMode: 'speed', colorCode: true, animateChanges: true, speedUnit: 'mph',
+            // Replaced displayMode with telemetryDisplayOptions
+            telemetryDisplayOptions: ['speed'],
+            colorCode: true, animateChanges: true, speedUnit: 'mph',
             minUpdateInterval: 300, telemetryVisible: true, hideOriginalList: true, showLapEstimate: true,
             lapEstimateSmoothingFactor: 0.15, fetchApiStatsOnClick: true,
             historicalRaceLimit: 20,
@@ -55,7 +58,7 @@
             historyLogLimit: 10
         },
         data: {},
-        storageKey: 'racingCustomUITelemetryConfig_v3.1.0',
+        storageKey: 'racingCustomUITelemetryConfig_v3.1.3',
         apiKeyStorageKey: 'racingCustomUITelemetryApiKey_persistent',
 
         load() {
@@ -65,6 +68,12 @@
             } catch (e) {
                 this.data = {...this.defaults};
                 this.data.apiKey = GM_getValue(this.apiKeyStorageKey, '');
+            }
+            // Ensure all defaults are present if loading old config
+            for (const key in this.defaults) {
+                if (!(key in this.data)) {
+                    this.data[key] = this.defaults[key];
+                }
             }
             return this.data;
         },
@@ -183,7 +192,7 @@
         .driver-details p { margin: 5px 0; line-height: 1.4; } .driver-details strong { color: #ddd; } .driver-details a { color: var(--accent-color); text-decoration: none; } .driver-details a:hover { text-decoration: underline; } .custom-driver-item.details-visible .driver-details { max-height: 350px; opacity: 1; padding-top: 8px; padding-bottom: 8px; margin-top: 6px; }
         .api-stats-container { border-top: 1px dashed var(--border-color); margin-top: 8px; padding-top: 8px; } .api-stats-container.loading .api-stat { color: var(--api-loading-color); font-style: italic; } .api-stats-container.error .api-stat-error-msg, .api-stats-container.no-key .api-stat-error-msg { color: var(--api-error-color); display: block; font-style: italic; } .api-stats-container.no-key .api-stat-error-msg { color: var(--api-info-color); } .api-stat-error-msg { display: none; } .api-stats-container p { margin: 3px 0; } .api-stat { font-weight: bold; color: var(--text-color); }
         #telemetryControlsContainer { margin: 10px 0 5px 0; justify-content: flex-end; gap: 5px; }
-        .telemetry-download-button, .telemetry-info-button, .telemetry-history-button, .telemetry-stats-button, .telemetry-settings-button { background: var(--background-light); color: var(--text-color); border: 1px solid var(--border-color); padding: 6px 12px; text-align: center; cursor: pointer; transition: all 0.2s ease; font-size: 13px; border-radius: 4px; }
+        .telemetry-download-button, .telemetry-info-button, .telemetry-history-button, .telemetry-stats-button, .telemetry-settings-button { background: var(--background-light); color: var(--text-color); border: 1px solid var(--border-color); padding: 6px 12px; text-align: center; cursor: pointer; transition: all 0.2s ease; font-size: 13px; border-radius: 4px; display: inline-block; } /* Ensure buttons are inline-block */
         .telemetry-info-button:hover, .telemetry-history-button:hover, .telemetry-stats-button:hover, .telemetry-settings-button:hover, .telemetry-download-button:hover { background-color: var(--accent-color); color: var(--background-dark); }
         .telemetry-history-button:hover { background-color: var(--history-color); color: var(--background-dark); }
         .telemetry-info-button:hover { background-color: var(--info-color); color: var(--background-dark); }
@@ -239,7 +248,13 @@
         .history-content .change-positive { color: #81C784; }
         .history-content .change-negative { color: #E57373; }
         .history-content .change-neutral { color: #90A4AE; }
-        .settings-item { margin-bottom: 20px; display: flex; flex-direction: column; } .settings-item label:not(.switch) { margin-bottom: 8px; color: var(--text-color); font-weight: bold; display: block; } .settings-item select, .settings-item input[type=number], .settings-item input[type=text], .toggle-container { padding: 8px; background: var(--background-light); border: 1px solid var(--border-color); border-radius: 4px; color: var(--text-color); width: 100%; box-sizing: border-box; } .settings-item input[type=text] { font-family: monospace; } .toggle-container { padding: 0; display: flex; align-items: center; justify-content: space-between; background: none; border: none; } .toggle-container label:first-child { margin-bottom: 0; } .settings-buttons { display: flex; justify-content: space-between; margin-top: 25px; padding-top: 15px; border-top: 1px solid var(--border-color); gap: 10px; flex-wrap: wrap; } .settings-btn { padding: 10px 15px; border-radius: 4px; border: none; cursor: pointer; background: var(--background-light); color: var(--text-color); transition: all 0.2s ease; flex-grow: 1; } .settings-btn:hover { background: var(--accent-color); color: var(--background-dark); } .settings-btn.primary { background: var(--primary-color); color: white; } .settings-btn.primary:hover { background: #388E3C; } .settings-btn.danger { background-color: var(--danger-color); color: white; } .settings-btn.danger:hover { background-color: var(--danger-hover-color); } .settings-data-buttons { display: flex; gap: 10px; width: 100%; margin-top: 10px; } .switch { position: relative; display: inline-block; width: 45px; height: 24px; flex-shrink: 0;} .switch input { opacity: 0; width: 0; height: 0; } .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #4d4d4d; transition: .3s; border-radius: 12px; } .slider:before { position: absolute; content: ""; height: 20px; width: 20px; left: 3px; bottom: 2px; background-color: #f4f4f4; transition: .3s; border-radius: 50%; } input:checked + .slider { background-color: var(--primary-color); } input:checked + .slider:before { transform: translateX(21px); }
+        .settings-item { margin-bottom: 15px; display: flex; flex-direction: column; } /* Reduced margin */
+        .settings-item label:not(.switch) { margin-bottom: 8px; color: var(--text-color); font-weight: bold; display: block; }
+        .settings-item .telemetry-options-group { display: flex; flex-direction: column; gap: 10px; margin-top: 5px; border: 1px solid var(--border-color); border-radius: 4px; padding: 10px; background: var(--background-light);}
+        .settings-item .telemetry-options-group .toggle-container { margin-bottom: 0; } /* Remove margin inside group */
+        .settings-item select, .settings-item input[type=number], .settings-item input[type=text] { padding: 8px; background: var(--background-light); border: 1px solid var(--border-color); border-radius: 4px; color: var(--text-color); width: 100%; box-sizing: border-box; }
+        .settings-item input[type=text] { font-family: monospace; }
+        .toggle-container { padding: 0; display: flex; align-items: center; justify-content: space-between; background: none; border: none; } .toggle-container label:first-child { margin-bottom: 0; } .settings-buttons { display: flex; justify-content: space-between; margin-top: 25px; padding-top: 15px; border-top: 1px solid var(--border-color); gap: 10px; flex-wrap: wrap; } .settings-btn { padding: 10px 15px; border-radius: 4px; border: none; cursor: pointer; background: var(--background-light); color: var(--text-color); transition: all 0.2s ease; flex-grow: 1; } .settings-btn:hover { background: var(--accent-color); color: var(--background-dark); } .settings-btn.primary { background: var(--primary-color); color: white; } .settings-btn.primary:hover { background: #388E3C; } .settings-btn.danger { background-color: var(--danger-color); color: white; } .settings-btn.danger:hover { background-color: var(--danger-hover-color); } .settings-data-buttons { display: flex; gap: 10px; width: 100%; margin-top: 10px; } .switch { position: relative; display: inline-block; width: 45px; height: 24px; flex-shrink: 0;} .switch input { opacity: 0; width: 0; height: 0; } .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #4d4d4d; transition: .3s; border-radius: 12px; } .slider:before { position: absolute; content: ""; height: 20px; width: 20px; left: 3px; bottom: 2px; background-color: #f4f4f4; transition: .3s; border-radius: 50%; } input:checked + .slider { background-color: var(--primary-color); } input:checked + .slider:before { transform: translateX(21px); }
         .color-1 { background-color: #DC143C; } .color-2 { background-color: #4682B4; } .color-3 { background-color: #32CD32; } .color-4 { background-color: #FFD700; } .color-5 { background-color: #FF8C00; } .color-6 { background-color: #9932CC; } .color-7 { background-color: #00CED1; } .color-8 { background-color: #FF1493; } .color-9 { background-color: #8B4513; } .color-10 { background-color: #7FFF00; } .color-11 { background-color: #00FA9A; } .color-12 { background-color: #D2691E; } .color-13 { background-color: #6495ED; } .color-14 { background-color: #F08080; } .color-15 { background-color: #20B2AA; } .color-16 { background-color: #B0C4DE; } .color-17 { background-color: #DA70D6; } .color-18 { background-color: #FF6347; } .color-19 { background-color: #40E0D0; } .color-20 { background-color: #C71585; } .color-21 { background-color: #6A5ACD; } .color-22 { background-color: #FA8072; } .color-default { background-color: #666; }
         @media (max-width: 768px) { .custom-driver-item { padding: 5px; } .driver-info-row { margin-bottom: 4px; } .driver-name { min-width: 80px; } .driver-telemetry-display { font-size: 0.8em; min-width: 60px; margin-left: 5px; padding: 1px 4px;} .driver-details { font-size: 0.85em; } #custom-driver-list-container { max-height: 350px; } .telemetry-download-button, .telemetry-info-button, .telemetry-history-button, .telemetry-stats-button, .telemetry-settings-button { font-size: 12px; padding: 5px 10px; } .settings-popup-content, .stats-panel-content, .history-panel-content, .info-panel-content, .download-popup-content { width: 95%; padding: 15px; } .settings-title, .stats-title, .history-title, .info-title, .download-title { font-size: 18px; } .settings-btn { padding: 8px 12px; font-size: 14px; } .custom-driver-item.details-visible .driver-details { max-height: 320px; } .stats-content table { font-size: 0.9em; } .stats-content th, .stats-content td { padding: 4px 6px; } .history-content table { font-size: 0.9em; } .history-content th, .history-content td { padding: 4px 6px; } }
         @media (max-width: 480px) { .driver-name { min-width: 60px; } .driver-telemetry-display { min-width: 55px; } .stats-content table { font-size: 0.85em; } .stats-content th, .stats-content td { padding: 3px 4px; } .history-content table { font-size: 0.85em; } .history-content th, .history-content td { padding: 3px 4px; } .settings-buttons { flex-direction: column; } .settings-data-buttons { flex-direction: column; } }
@@ -283,7 +298,7 @@
         easeInOutQuad(t) { return t < 0.5 ? 2*t*t : -1+(4-2*t)*t; },
         interpolateColor(color1, color2, factor) { const result = color1.map((c, i) => Math.round(c + factor * (color2[i] - c))); return `rgb(${result[0]}, ${result[1]}, ${result[2]})`; },
         getTelemetryColor(acceleration) { const grey = [136, 136, 136]; const green = [76, 175, 80]; const red = [244, 67, 54]; const defaultColor = getComputedStyle(document.documentElement).getPropertyValue('--telemetry-default-color').match(/\d+/g)?.map(Number) || grey; const accelColor = getComputedStyle(document.documentElement).getPropertyValue('--telemetry-accel-color').match(/\d+/g)?.map(Number) || green; const decelColor = getComputedStyle(document.documentElement).getPropertyValue('--telemetry-decel-color').match(/\d+/g)?.map(Number) || red; if (!Config.get('colorCode')) return `rgb(${defaultColor.join(', ')})`; const maxAcc = 1.0; let factor = Math.min(Math.abs(acceleration) / maxAcc, 1); factor = isNaN(factor) ? 0 : factor; if (acceleration > 0.05) return this.interpolateColor(defaultColor, accelColor, factor); if (acceleration < -0.05) return this.interpolateColor(defaultColor, decelColor, factor); return `rgb(${defaultColor.join(', ')})`; },
-        animateTelemetry(element, fromSpeed, toSpeed, fromAcc, toAcc, duration, displayMode, speedUnit, extraText) { let startTime = null; const easeFunction = this.easeInOutQuad; const getColor = this.getTelemetryColor.bind(this); fromSpeed = Number(fromSpeed) || 0; toSpeed = Number(toSpeed) || 0; fromAcc = Number(fromAcc) || 0; toAcc = Number(toAcc) || 0; duration = Number(duration) || Config.get('minUpdateInterval'); function step(timestamp) { if (!startTime) startTime = timestamp; let linearProgress = Math.min((timestamp - startTime) / duration, 1); if (isNaN(linearProgress) || duration <= 0) linearProgress = 1; let progress = easeFunction(linearProgress); let currentSpeed = fromSpeed + (toSpeed - fromSpeed) * progress; let currentAcc = fromAcc + (toAcc - fromAcc) * progress; element._currentSpeed = currentSpeed; element._currentAcc = currentAcc; let color = Config.get('colorCode') ? getColor(currentAcc) : 'var(--telemetry-default-color)'; let text; if (displayMode === 'speed') { text = `${Math.round(currentSpeed)} ${speedUnit}`; } else if (displayMode === 'acceleration') { text = `${currentAcc.toFixed(1)} g`; } else { text = `${Math.round(currentSpeed)} ${speedUnit} | ${currentAcc.toFixed(1)} g`; } element.innerHTML = text + extraText; element.style.color = color; if (linearProgress < 1) { element._telemetryAnimationFrame = requestAnimationFrame(step); } else { element._telemetryAnimationFrame = null; if (displayMode === 'speed') { text = `${Math.round(toSpeed)} ${speedUnit}`; } else if (displayMode === 'acceleration') { text = `${toAcc.toFixed(1)} g`; } else { text = `${Math.round(toSpeed)} ${speedUnit} | ${toAcc.toFixed(1)} g`; } element.innerHTML = text + extraText; element.style.color = Config.get('colorCode') ? getColor(toAcc) : 'var(--telemetry-default-color)'; } } if (element._telemetryAnimationFrame) { cancelAnimationFrame(element._telemetryAnimationFrame); } element._telemetryAnimationFrame = requestAnimationFrame(step); },
+        animateTelemetry(element, fromSpeed, toSpeed, fromAcc, toAcc, duration, displayMode, speedUnit, extraText) { let startTime = null; const easeFunction = this.easeInOutQuad; const getColor = this.getTelemetryColor.bind(this); fromSpeed = Number(fromSpeed) || 0; toSpeed = Number(toSpeed) || 0; fromAcc = Number(fromAcc) || 0; toAcc = Number(toAcc) || 0; duration = Number(duration) || Config.get('minUpdateInterval'); function step(timestamp) { if (!startTime) startTime = timestamp; let linearProgress = Math.min((timestamp - startTime) / duration, 1); if (isNaN(linearProgress) || duration <= 0) linearProgress = 1; let progress = easeFunction(linearProgress); let currentSpeed = fromSpeed + (toSpeed - fromSpeed) * progress; let currentAcc = fromAcc + (toAcc - fromAcc) * progress; element._currentSpeed = currentSpeed; element._currentAcc = currentAcc; let color = Config.get('colorCode') ? getColor(currentAcc) : 'var(--telemetry-default-color)'; let text; if (displayMode === 'speed') { text = `${Math.round(currentSpeed)} ${speedUnit}`; } else if (displayMode === 'acceleration') { text = `${currentAcc.toFixed(1)} g`; } else if (displayMode === 'both') { text = `${Math.round(currentSpeed)} ${speedUnit} | ${currentAcc.toFixed(1)} g`; } else { text = ''; } element.innerHTML = text + extraText; element.style.color = color; if (linearProgress < 1) { element._telemetryAnimationFrame = requestAnimationFrame(step); } else { element._telemetryAnimationFrame = null; let finalSpeedText = `${Math.round(toSpeed)} ${speedUnit}`; let finalAccelText = `${toAcc.toFixed(1)} g`; let finalText; if (displayMode === 'speed') { finalText = finalSpeedText; } else if (displayMode === 'acceleration') { finalText = finalAccelText; } else if (displayMode === 'both') { finalText = `${finalSpeedText} | ${finalAccelText}`; } else { finalText = ''; } element.innerHTML = finalText + extraText; element.style.color = Config.get('colorCode') ? getColor(toAcc) : 'var(--telemetry-default-color)'; } } if (element._telemetryAnimationFrame) { cancelAnimationFrame(element._telemetryAnimationFrame); } element._telemetryAnimationFrame = requestAnimationFrame(step); },
         calculateDriverMetrics(driverId, progressPercentage, timestamp) { const prev = State.previousMetrics[driverId] || { progress: progressPercentage, time: timestamp - Config.get('minUpdateInterval'), instantaneousSpeed: 0, reportedSpeed: 0, acceleration: 0, lastDisplayedSpeed: 0, lastDisplayedAcceleration: 0, firstUpdate: true, currentLap: 1, progressInLap: 0, rawLapEstimate: null, smoothedLapEstimate: null, statusClass: 'ready' }; let dt = (timestamp - prev.time) / 1000; const minDt = Config.get('minUpdateInterval') / 1000; if (dt < minDt && !prev.firstUpdate) { return { speed: prev.reportedSpeed, acceleration: prev.acceleration, timeDelta: dt * 1000, noUpdate: true }; } const effectiveDt = Math.max(minDt, dt); const progressDelta = progressPercentage - prev.progress; if (progressDelta < -0.01 && !prev.firstUpdate) { State.previousMetrics[driverId] = { ...prev, time: timestamp }; return { speed: prev.reportedSpeed, acceleration: prev.acceleration, timeDelta: effectiveDt * 1000 }; } const distanceDelta = State.trackInfo.total * Math.max(0, progressDelta) / 100; const currentSpeed = effectiveDt > 0 ? (distanceDelta / effectiveDt) * 3600 : 0; const averagedSpeed = prev.firstUpdate ? currentSpeed : (prev.reportedSpeed * 0.6 + currentSpeed * 0.4); const speedDeltaMps = (averagedSpeed - prev.reportedSpeed) * 0.44704; const acceleration = (prev.firstUpdate || effectiveDt <= 0) ? 0 : (speedDeltaMps / effectiveDt) / 9.81; const totalLaps = State.trackInfo.laps || 1; const percentPerLap = 100 / totalLaps; const currentLap = Math.min(totalLaps, Math.floor(progressPercentage / percentPerLap) + 1); const startPercentOfLap = (currentLap - 1) * percentPerLap; const progressInLap = percentPerLap > 0 ? Math.max(0, Math.min(100, ((progressPercentage - startPercentOfLap) / percentPerLap) * 100)) : 0; State.previousMetrics[driverId] = { ...prev, progress: progressPercentage, time: timestamp, instantaneousSpeed: currentSpeed, reportedSpeed: averagedSpeed, acceleration: acceleration, lastDisplayedSpeed: averagedSpeed, lastDisplayedAcceleration: acceleration, firstUpdate: false, currentLap: currentLap, progressInLap: progressInLap }; return { speed: Math.max(0, averagedSpeed), acceleration, timeDelta: effectiveDt * 1000 }; },
         calculateSmoothedLapEstimate(driverId, metrics) { const driverState = State.previousMetrics[driverId]; if (!driverState || metrics.speed <= 1) { if (driverState) { driverState.rawLapEstimate = null; driverState.smoothedLapEstimate = null; } return null; } const lapLength = State.trackInfo.length || 0; if (lapLength <= 0) return null; const remainingProgressInLap = 100 - driverState.progressInLap; const remainingDistance = lapLength * (remainingProgressInLap / 100); const rawEstimate = (remainingDistance / metrics.speed) * 3600; driverState.rawLapEstimate = rawEstimate; const alpha = Config.get('lapEstimateSmoothingFactor'); let smoothedEstimate; if (driverState.smoothedLapEstimate === null || !isFinite(driverState.smoothedLapEstimate) || isNaN(driverState.smoothedLapEstimate)) { smoothedEstimate = rawEstimate; } else { smoothedEstimate = alpha * rawEstimate + (1 - alpha) * driverState.smoothedLapEstimate; } if (smoothedEstimate > 3600 || smoothedEstimate < 0) { smoothedEstimate = driverState.smoothedLapEstimate ?? rawEstimate; } driverState.smoothedLapEstimate = smoothedEstimate; return smoothedEstimate; }
     };
@@ -295,16 +310,28 @@
             popup.className = 'settings-popup';
             const content = document.createElement('div');
             content.className = 'settings-popup-content';
+
+            const displayOptions = Config.get('telemetryDisplayOptions');
+
             content.innerHTML = `
                 <div class="settings-title">Telemetry & UI Settings <button class="settings-close">×</button></div>
                 <div class="settings-content">
                     <div class="settings-item"> <div class="toggle-container"> <label for="historyEnabled">Enable History Panel & Logging</label> <label class="switch"> <input type="checkbox" id="historyEnabled"> <span class="slider"></span> </label> </div> </div>
                     <div class="settings-item"> <div class="toggle-container"> <label for="statsPanelEnabled">Enable Stats Panel</label> <label class="switch"> <input type="checkbox" id="statsPanelEnabled"> <span class="slider"></span> </label> </div> </div>
                     <hr style="border: none; border-top: 1px solid var(--border-color); margin: 20px 0;">
-                    <div class="settings-item"> <label for="displayMode">Telemetry Display</label> <select id="displayMode"> <option value="speed">Speed Only</option> <option value="acceleration">Acceleration Only</option> <option value="both">Speed & Acceleration</option> </select> </div>
+
+                    <div class="settings-item">
+                         <label>Telemetry Display Options:</label>
+                         <div class="telemetry-options-group">
+                            <div class="toggle-container"> <label for="telemetryShowSpeed">Show Speed</label> <label class="switch"> <input type="checkbox" id="telemetryShowSpeed"> <span class="slider"></span> </label> </div>
+                            <div class="toggle-container"> <label for="telemetryShowAcceleration">Show Acceleration</label> <label class="switch"> <input type="checkbox" id="telemetryShowAcceleration"> <span class="slider"></span> </label> </div>
+                            <div class="toggle-container"> <label for="telemetryShowProgress">Show Progress %</label> <label class="switch"> <input type="checkbox" id="telemetryShowProgress"> <span class="slider"></span> </label> </div>
+                         </div>
+                    </div>
+
                     <div class="settings-item"> <label for="speedUnit">Speed Unit</label> <select id="speedUnit"> <option value="mph">mph</option> <option value="kmh">km/h</option> </select> </div>
-                    <div class="settings-item"> <div class="toggle-container"> <label for="colorCode">Color Code Telemetry</label> <label class="switch"> <input type="checkbox" id="colorCode"> <span class="slider"></span> </label> </div> </div>
-                    <div class="settings-item"> <div class="toggle-container"> <label for="animateChanges">Animate Telemetry Changes</label> <label class="switch"> <input type="checkbox" id="animateChanges"> <span class="slider"></span> </label> </div> </div>
+                    <div class="settings-item"> <div class="toggle-container"> <label for="colorCode">Color Code Telemetry (by Accel)</label> <label class="switch"> <input type="checkbox" id="colorCode"> <span class="slider"></span> </label> </div> </div>
+                    <div class="settings-item"> <div class="toggle-container"> <label for="animateChanges">Animate Changes (Simple Cases)</label> <label class="switch"> <input type="checkbox" id="animateChanges"> <span class="slider"></span> </label> </div> <small style="color: #aaa; margin-top: 5px;">Animation only applies if just Speed, just Accel, or only Speed & Accel are shown.</small></div>
                     <div class="settings-item"> <div class="toggle-container"> <label for="showLapEstimate">Show Est. Lap Time</label> <label class="switch"> <input type="checkbox" id="showLapEstimate"> <span class="slider"></span> </label> </div> </div>
                     <div class="settings-item"> <label for="lapEstimateSmoothingFactor">Lap Est. Smoothing (0.01-1.0)</label> <input type="number" id="lapEstimateSmoothingFactor" min="0.01" max="1.0" step="0.01"> </div>
                     <hr style="border: none; border-top: 1px solid var(--border-color); margin: 20px 0;">
@@ -325,9 +352,13 @@
                          <button class="settings-btn danger" id="clearApiKey">Clear API Key</button>
                     </div>
                 </div>`;
+
+            // Set initial states for toggles
             content.querySelector('#historyEnabled').checked = Config.get('historyEnabled');
             content.querySelector('#statsPanelEnabled').checked = Config.get('statsPanelEnabled');
-            content.querySelector('#displayMode').value = Config.get('displayMode');
+            content.querySelector('#telemetryShowSpeed').checked = displayOptions.includes('speed');
+            content.querySelector('#telemetryShowAcceleration').checked = displayOptions.includes('acceleration');
+            content.querySelector('#telemetryShowProgress').checked = displayOptions.includes('progress');
             content.querySelector('#speedUnit').value = Config.get('speedUnit');
             content.querySelector('#colorCode').checked = Config.get('colorCode');
             content.querySelector('#animateChanges').checked = Config.get('animateChanges');
@@ -349,9 +380,17 @@
 
             content.querySelector('#saveSettings').addEventListener('click', () => {
                 const historyWasEnabled = Config.get('historyEnabled');
+
+                // Save telemetry display options
+                const selectedOptions = [];
+                if (content.querySelector('#telemetryShowSpeed').checked) selectedOptions.push('speed');
+                if (content.querySelector('#telemetryShowAcceleration').checked) selectedOptions.push('acceleration');
+                if (content.querySelector('#telemetryShowProgress').checked) selectedOptions.push('progress');
+                Config.set('telemetryDisplayOptions', selectedOptions);
+
+                // Save other settings
                 Config.set('historyEnabled', content.querySelector('#historyEnabled').checked);
                 Config.set('statsPanelEnabled', content.querySelector('#statsPanelEnabled').checked);
-                Config.set('displayMode', content.querySelector('#displayMode').value);
                 Config.set('speedUnit', content.querySelector('#speedUnit').value);
                 Config.set('colorCode', content.querySelector('#colorCode').checked);
                 Config.set('animateChanges', content.querySelector('#animateChanges').checked);
@@ -380,7 +419,7 @@
                     if(State.historyCheckIntervalId) clearInterval(State.historyCheckIntervalId);
                     State.historyCheckIntervalId = null;
                 }
-                RaceManager.stableUpdateCustomList();
+                RaceManager.stableUpdateCustomList(); // Update list to reflect new telemetry options
             });
 
             content.querySelector('#clearData').addEventListener('click', () => {
@@ -407,6 +446,7 @@
             State.settingsPopupInstance = popup;
         },
         async createAdvancedStatsPanel() {
+            if (!Config.get('statsPanelEnabled')) return; // Check if enabled
             if (State.advancedStatsPanelInstance) State.advancedStatsPanelInstance.remove();
             State.destroyActiveCharts();
             const popup = document.createElement('div');
@@ -677,6 +717,7 @@
         },
         parseCurrentUserCarStats() { const carDiv = document.querySelector('div.car-selected.left'); if (!carDiv) return null; try { const nameEl = carDiv.querySelector('.model p:first-child'); const imgEl = carDiv.querySelector('.model .img img.torn-item'); const name = nameEl ? nameEl.textContent.trim() : 'Unknown Car'; let id = null; if (imgEl && imgEl.src) { const idMatch = imgEl.src.match(/\/items\/(\d+)\//); if (idMatch) id = parseInt(idMatch[1], 10); } const stats = {}; const statItems = carDiv.querySelectorAll('ul.properties-wrap li'); statItems.forEach(li => { const titleEl = li.querySelector('.title'); const progressBarEl = li.querySelector('.progressbar-wrap'); if (titleEl && progressBarEl && progressBarEl.title) { const statName = titleEl.textContent.trim(); const titleAttr = progressBarEl.title; const valueMatch = titleAttr.match(/^(\d+)\s*\(/); if (valueMatch) { stats[statName] = parseInt(valueMatch[1], 10); } } }); if (Object.keys(stats).length === 0) { return { name, id, stats: null }; } return { name, id, stats }; } catch (e) { return null; } },
         createHistoryPanel() {
+            if (!Config.get('historyEnabled')) return; // Check if enabled
             if (State.historyPanelInstance) State.historyPanelInstance.remove();
             State.destroyActiveCharts();
             const popup = document.createElement('div');
@@ -919,9 +960,9 @@
             const statsBtn = State.controlsContainer.querySelector('.telemetry-stats-button');
             const downloadBtn = State.controlsContainer.querySelector('.telemetry-download-button');
 
-            if (historyBtn) historyBtn.style.display = Config.get('historyEnabled') ? 'inline-block' : 'none'; // Use inline-block
-            if (statsBtn) statsBtn.style.display = Config.get('statsPanelEnabled') ? 'inline-block' : 'none'; // Use inline-block
-            if (downloadBtn) downloadBtn.style.display = State.raceFinished ? 'inline-block' : 'none'; // CORRECTED LINE HERE
+            if (historyBtn) historyBtn.style.display = Config.get('historyEnabled') ? 'inline-block' : 'none';
+            if (statsBtn) statsBtn.style.display = Config.get('statsPanelEnabled') ? 'inline-block' : 'none';
+            if (downloadBtn) downloadBtn.style.display = State.raceFinished ? 'inline-block' : 'none'; // Changed '' to 'inline-block'
         },
         initializeControls() {
             if (!State.controlsContainer) return;
@@ -938,7 +979,7 @@
              historyButton.className = 'telemetry-history-button';
              historyButton.textContent = '📜 History';
              historyButton.title = 'View Your Racing Stats History';
-             historyButton.style.display = 'none';
+             historyButton.style.display = 'none'; // Initially hidden
              historyButton.addEventListener('click', () => { this.createHistoryPanel(); });
              State.controlsContainer.appendChild(historyButton);
 
@@ -946,7 +987,7 @@
             statsButton.className = 'telemetry-stats-button';
             statsButton.textContent = '📊 Stats';
             statsButton.title = 'Open Advanced Race Statistics';
-            statsButton.style.display = 'none';
+            statsButton.style.display = 'none'; // Initially hidden
             statsButton.addEventListener('click', () => {
                 RaceManager.updateTrackAndClassInfo().then(() => { this.createAdvancedStatsPanel(); })
                 .catch(e => { Utils.showNotification("Error getting latest track/class info.", "error"); });
@@ -1200,25 +1241,61 @@
             const telemetryDiv = element.querySelector('.driver-telemetry-display');
             if (telemetryDiv) {
                 let telemetryText = ''; let extraTelemetryText = ''; let telemetryColor = 'var(--telemetry-default-color)'; let stopAnimation = false;
-                const displayMode = Config.get('displayMode'); const speedUnit = Config.get('speedUnit');
+                const displayOptions = Config.get('telemetryDisplayOptions') || []; // Default to empty array if undefined
+                const speedUnit = Config.get('speedUnit');
 
                 if (driverData.statusClass === 'crashed') { telemetryText = '💥 CRASHED'; telemetryColor = 'var(--telemetry-decel-color)'; stopAnimation = true; if (driverState) { driverState.rawLapEstimate = null; driverState.smoothedLapEstimate = null; } }
                 else if (driverData.statusClass === 'finished') { const finishTime = Utils.parseTime(driverData.originalStatusText); let avgSpeedFormatted = '---'; let finishTimeText = driverData.originalStatusText || '--:--'; if (finishTime > 0 && State.trackInfo.total > 0) { const avgSpeed = (State.trackInfo.total / finishTime) * 3600; avgSpeedFormatted = `~${Math.round(Utils.convertSpeed(avgSpeed, speedUnit))} ${speedUnit}`; } telemetryText = `🏁 ${finishTimeText} (${avgSpeedFormatted})`; telemetryColor = 'var(--telemetry-default-color)'; stopAnimation = true; if (driverState) { driverState.rawLapEstimate = null; driverState.smoothedLapEstimate = null; } }
-                else if (driverData.statusClass === 'ready') { if (displayMode === 'speed') telemetryText = `0 ${speedUnit}`; else if (displayMode === 'acceleration') telemetryText = `0.0 g`; else telemetryText = `0 ${speedUnit} | 0.0 g`; telemetryColor = 'var(--telemetry-default-color)'; stopAnimation = true; if (driverState) { driverState.rawLapEstimate = null; driverState.smoothedLapEstimate = null; } }
-                else {
+                else if (driverData.statusClass === 'ready') {
+                     const displayParts = [];
+                     if (displayOptions.includes('speed')) displayParts.push(`0 ${speedUnit}`);
+                     if (displayOptions.includes('acceleration')) displayParts.push(`0.0 g`);
+                     if (displayOptions.includes('progress')) displayParts.push(`0.0%`);
+                     telemetryText = displayParts.length > 0 ? displayParts.join(' | ') : '-';
+                     telemetryColor = 'var(--telemetry-default-color)';
+                     stopAnimation = true;
+                     if (driverState) { driverState.rawLapEstimate = null; driverState.smoothedLapEstimate = null; }
+                }
+                else { // Racing state
                     const metrics = Telemetry.calculateDriverMetrics(driverId, driverData.progress, now);
                     if (!metrics.noUpdate || driverState?.firstUpdate) {
-                        const targetSpeed = Math.round(Utils.convertSpeed(metrics.speed, speedUnit)); const targetAcc = metrics.acceleration;
-                        if (displayMode === 'speed') { telemetryText = `${targetSpeed} ${speedUnit}`; } else if (displayMode === 'acceleration') { telemetryText = `${targetAcc.toFixed(1)} g`; } else { telemetryText = `${targetSpeed} ${speedUnit} | ${targetAcc.toFixed(1)} g`; }
-                        telemetryColor = Telemetry.getTelemetryColor(targetAcc);
+                        const targetSpeed = Utils.convertSpeed(metrics.speed, speedUnit);
+                        const targetAcc = metrics.acceleration;
+
+                        const displayParts = [];
+                        if (displayOptions.includes('speed')) displayParts.push(`${Math.round(targetSpeed)} ${speedUnit}`);
+                        if (displayOptions.includes('acceleration')) displayParts.push(`${targetAcc.toFixed(1)} g`);
+                        if (displayOptions.includes('progress')) displayParts.push(`${driverData.progress.toFixed(1)}%`);
+                        telemetryText = displayParts.length > 0 ? displayParts.join(' | ') : '-';
+
+                        telemetryColor = (displayOptions.includes('acceleration') && Config.get('colorCode')) ? Telemetry.getTelemetryColor(targetAcc) : 'var(--telemetry-default-color)';
+
                         if (Config.get('showLapEstimate') && driverData.progress < 100 && State.trackInfo.id && driverState) { const lapEstimateSeconds = Telemetry.calculateSmoothedLapEstimate(driverId, metrics); if (lapEstimateSeconds !== null && isFinite(lapEstimateSeconds) && lapEstimateSeconds > 0) { extraTelemetryText = ` <span class="lap-estimate">(~${Utils.formatTime(lapEstimateSeconds)})</span>`; } else { extraTelemetryText = ''; } } else { extraTelemetryText = ''; }
-                        if (Config.get('animateChanges') && driverState && !driverState.firstUpdate) { const fromSpeed = (telemetryDiv._currentSpeed !== undefined) ? telemetryDiv._currentSpeed : Math.round(Utils.convertSpeed(driverState.lastDisplayedSpeed || 0, speedUnit)); const fromAcc = (telemetryDiv._currentAcc !== undefined) ? telemetryDiv._currentAcc : driverState.lastDisplayedAcceleration || 0; const duration = metrics.timeDelta; Telemetry.animateTelemetry(telemetryDiv, fromSpeed, targetSpeed, fromAcc, targetAcc, duration, displayMode, speedUnit, extraTelemetryText); }
-                        else { stopAnimation = true; }
+
+                        // Determine if simple animation is possible
+                        const canAnimate = Config.get('animateChanges') && driverState && !driverState.firstUpdate &&
+                                          ((displayOptions.length === 1 && displayOptions[0] === 'speed') ||
+                                           (displayOptions.length === 1 && displayOptions[0] === 'acceleration') ||
+                                           (displayOptions.length === 2 && displayOptions.includes('speed') && displayOptions.includes('acceleration') && !displayOptions.includes('progress')));
+
+                        if (canAnimate) {
+                            const fromSpeed = (telemetryDiv._currentSpeed !== undefined) ? telemetryDiv._currentSpeed : Math.round(Utils.convertSpeed(driverState.lastDisplayedSpeed || 0, speedUnit));
+                            const fromAcc = (telemetryDiv._currentAcc !== undefined) ? telemetryDiv._currentAcc : driverState.lastDisplayedAcceleration || 0;
+                            const duration = metrics.timeDelta;
+                            let animationMode = '';
+                            if (displayOptions.includes('speed') && displayOptions.includes('acceleration')) animationMode = 'both';
+                            else if (displayOptions.includes('speed')) animationMode = 'speed';
+                            else if (displayOptions.includes('acceleration')) animationMode = 'acceleration';
+
+                            Telemetry.animateTelemetry(telemetryDiv, fromSpeed, Math.round(targetSpeed), fromAcc, targetAcc, duration, animationMode, speedUnit, extraTelemetryText);
+                        } else {
+                            stopAnimation = true;
+                        }
                         if (driverState) { driverState.lastDisplayedSpeed = metrics.speed; driverState.lastDisplayedAcceleration = targetAcc; }
-                    } else {
-                        telemetryText = telemetryDiv.innerHTML.split('<span class="lap-estimate">')[0].trim();
+                    } else { // No metric update, just update extra text if needed
+                        telemetryText = telemetryDiv.innerHTML.split('<span class="lap-estimate">')[0].trim(); // Keep existing text
                         if (Config.get('showLapEstimate') && driverData.progress < 100 && State.trackInfo.id && driverState) { const lapEstimateSeconds = driverState.smoothedLapEstimate; if (lapEstimateSeconds !== null && isFinite(lapEstimateSeconds) && lapEstimateSeconds > 0) { extraTelemetryText = ` <span class="lap-estimate">(~${Utils.formatTime(lapEstimateSeconds)})</span>`; } else { extraTelemetryText = ''; } } else { extraTelemetryText = ''; }
-                        telemetryDiv.innerHTML = telemetryText + extraTelemetryText;
+                        telemetryDiv.innerHTML = telemetryText + extraTelemetryText; // Update only extra text potentially
                     }
                 }
                 if (stopAnimation) { if (telemetryDiv._telemetryAnimationFrame) cancelAnimationFrame(telemetryDiv._telemetryAnimationFrame); telemetryDiv.innerHTML = telemetryText + extraTelemetryText; telemetryDiv.style.color = telemetryColor; telemetryDiv._currentSpeed = undefined; telemetryDiv._currentAcc = undefined; }
@@ -1478,8 +1555,7 @@
                 State.observers.push(observer);
             }
 
-            // Initial check in case the race is already finished when the script loads
-            RaceManager.stableUpdateCustomList();
+            RaceManager.stableUpdateCustomList(); // Initial check for finished state
 
             return true;
         } catch (e) { Utils.showNotification(`Init Error: ${e.message}`, "error"); cleanupScriptState("Initialization error"); return false; }
