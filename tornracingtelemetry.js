@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn Racing Telemetry
 // @namespace    https://www.torn.com/profiles.php?XID=2782979
-// @version      3.1.4
+// @version      3.1.5
 // @description  Enhanced Torn Racing UI: Telemetry, driver stats, advanced stats panel, history tracking, and race results export.
 // @match        https://www.torn.com/page.php?sid=racing*
 // @match        https://www.torn.com/loader.php?sid=racing*
@@ -22,16 +22,17 @@
     'use strict';
 
     const ScriptInfo = {
-        version: '3.1.4',
+        version: typeof GM_info !== 'undefined' ? GM_info.script.version : '3.1.5',
         author: "TheProgrammer",
         contactId: "2782979",
         contactUrl: function() { return `https://www.torn.com/profiles.php?XID=${this.contactId}`; },
         description: "Provides enhanced telemetry, stats analysis, historical tracking, and race results export for Torn Racing.",
         notes: [
             "Your API key and all other script data (settings, history log) are stored **locally** in your browser's userscript storage. They are **never** transmitted anywhere except to the official Torn API when fetching data.",
+            "v3.1.5: API Key input is now a password field. Telemetry animation uses a fixed duration for smoother visual updates, especially when data updates are infrequent.",
             "Since version 3.1.0, the API key is stored separately from other settings, meaning it should **not** be cleared when the script updates or if you use the 'Clear Script Data' button.",
             "Use the 'Clear API Key' button specifically to remove the key.",
-            "The History Panel relies on checking your displayed Racing Skill/Class periodically. It fetches points via the API if a key is provided. Enable/disable in Settings.",
+            "The History Panel relies on checking your displayed Racing Skill/Class periodically. It fetches points via the API if a key is provided. Enable/disable in Settings. (v3.1.5: Fixed change calculation).",
             "The Stats Panel requires an API key to fetch historical race data and track/car information. Enable/disable in Settings.",
             "Race results export (💾 button) appears when the race finishes. Added CSV and Plain Text options.",
             "Chart rendering uses the Chart.js library.",
@@ -248,8 +249,8 @@
         .settings-item label:not(.switch) { margin-bottom: 8px; color: var(--text-color); font-weight: bold; display: block; }
         .settings-item .telemetry-options-group { display: flex; flex-direction: column; gap: 10px; margin-top: 5px; border: 1px solid var(--border-color); border-radius: 4px; padding: 10px; background: var(--background-light);}
         .settings-item .telemetry-options-group .toggle-container { margin-bottom: 0; }
-        .settings-item select, .settings-item input[type=number], .settings-item input[type=text] { padding: 8px; background: var(--background-light); border: 1px solid var(--border-color); border-radius: 4px; color: var(--text-color); width: 100%; box-sizing: border-box; }
-        .settings-item input[type=text] { font-family: monospace; }
+        .settings-item select, .settings-item input[type=number], .settings-item input[type=text], .settings-item input[type=password] { padding: 8px; background: var(--background-light); border: 1px solid var(--border-color); border-radius: 4px; color: var(--text-color); width: 100%; box-sizing: border-box; }
+        .settings-item input[type=password] { font-family: monospace; }
         .toggle-container { padding: 0; display: flex; align-items: center; justify-content: space-between; background: none; border: none; } .toggle-container label:first-child { margin-bottom: 0; } .settings-buttons { display: flex; justify-content: space-between; margin-top: 25px; padding-top: 15px; border-top: 1px solid var(--border-color); gap: 10px; flex-wrap: wrap; } .settings-btn { padding: 10px 15px; border-radius: 4px; border: none; cursor: pointer; background: var(--background-light); color: var(--text-color); transition: all 0.2s ease; flex-grow: 1; } .settings-btn:hover { background: var(--accent-color); color: var(--background-dark); } .settings-btn.primary { background: var(--primary-color); color: white; } .settings-btn.primary:hover { background: #388E3C; } .settings-btn.danger { background-color: var(--danger-color); color: white; } .settings-btn.danger:hover { background-color: var(--danger-hover-color); } .settings-data-buttons { display: flex; gap: 10px; width: 100%; margin-top: 10px; } .switch { position: relative; display: inline-block; width: 45px; height: 24px; flex-shrink: 0;} .switch input { opacity: 0; width: 0; height: 0; } .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #4d4d4d; transition: .3s; border-radius: 12px; } .slider:before { position: absolute; content: ""; height: 20px; width: 20px; left: 3px; bottom: 2px; background-color: #f4f4f4; transition: .3s; border-radius: 50%; } input:checked + .slider { background-color: var(--primary-color); } input:checked + .slider:before { transform: translateX(21px); }
         .color-1 { background-color: #DC143C; } .color-2 { background-color: #4682B4; } .color-3 { background-color: #32CD32; } .color-4 { background-color: #FFD700; } .color-5 { background-color: #FF8C00; } .color-6 { background-color: #9932CC; } .color-7 { background-color: #00CED1; } .color-8 { background-color: #FF1493; } .color-9 { background-color: #8B4513; } .color-10 { background-color: #7FFF00; } .color-11 { background-color: #00FA9A; } .color-12 { background-color: #D2691E; } .color-13 { background-color: #6495ED; } .color-14 { background-color: #F08080; } .color-15 { background-color: #20B2AA; } .color-16 { background-color: #B0C4DE; } .color-17 { background-color: #DA70D6; } .color-18 { background-color: #FF6347; } .color-19 { background-color: #40E0D0; } .color-20 { background-color: #C71585; } .color-21 { background-color: #6A5ACD; } .color-22 { background-color: #FA8072; } .color-default { background-color: #666; }
         @media (max-width: 768px) { .custom-driver-item { padding: 5px; } .driver-info-row { margin-bottom: 4px; } .driver-name { min-width: 80px; } .driver-telemetry-display { font-size: 0.8em; min-width: 60px; margin-left: 5px; padding: 1px 4px;} .driver-details { font-size: 0.85em; } #custom-driver-list-container { max-height: 350px; } .telemetry-download-button, .telemetry-info-button, .telemetry-history-button, .telemetry-stats-button, .telemetry-settings-button { font-size: 12px; padding: 5px 10px; } .settings-popup-content, .stats-panel-content, .history-panel-content, .info-panel-content, .download-popup-content { width: 95%; padding: 15px; } .settings-title, .stats-title, .history-title, .info-title, .download-title { font-size: 18px; } .settings-btn { padding: 8px 12px; font-size: 14px; } .custom-driver-item.details-visible .driver-details { max-height: 320px; } .stats-content table { font-size: 0.9em; } .stats-content th, .stats-content td { padding: 4px 6px; } .history-content table { font-size: 0.9em; } .history-content th, .history-content td { padding: 4px 6px; } }
@@ -304,7 +305,67 @@
         easeInOutQuad(t) { return t < 0.5 ? 2*t*t : -1+(4-2*t)*t; },
         interpolateColor(color1, color2, factor) { const result = color1.map((c, i) => Math.round(c + factor * (color2[i] - c))); return `rgb(${result[0]}, ${result[1]}, ${result[2]})`; },
         getTelemetryColor(acceleration) { const grey = [136, 136, 136]; const green = [76, 175, 80]; const red = [244, 67, 54]; const defaultColor = getComputedStyle(document.documentElement).getPropertyValue('--telemetry-default-color').match(/\d+/g)?.map(Number) || grey; const accelColor = getComputedStyle(document.documentElement).getPropertyValue('--telemetry-accel-color').match(/\d+/g)?.map(Number) || green; const decelColor = getComputedStyle(document.documentElement).getPropertyValue('--telemetry-decel-color').match(/\d+/g)?.map(Number) || red; if (!Config.get('colorCode')) return `rgb(${defaultColor.join(', ')})`; const maxAcc = 1.0; let factor = Math.min(Math.abs(acceleration) / maxAcc, 1); factor = isNaN(factor) ? 0 : factor; if (acceleration > 0.05) return this.interpolateColor(defaultColor, accelColor, factor); if (acceleration < -0.05) return this.interpolateColor(defaultColor, decelColor, factor); return `rgb(${defaultColor.join(', ')})`; },
-        animateTelemetry(element, fromSpeed, toSpeed, fromAcc, toAcc, duration, displayMode, speedUnit, extraText) { let startTime = null; const easeFunction = this.easeInOutQuad; const getColor = this.getTelemetryColor.bind(this); fromSpeed = Number(fromSpeed) || 0; toSpeed = Number(toSpeed) || 0; fromAcc = Number(fromAcc) || 0; toAcc = Number(toAcc) || 0; duration = Number(duration) || Config.get('minUpdateInterval'); function step(timestamp) { if (!startTime) startTime = timestamp; let linearProgress = Math.min((timestamp - startTime) / duration, 1); if (isNaN(linearProgress) || duration <= 0) linearProgress = 1; let progress = easeFunction(linearProgress); let currentSpeed = fromSpeed + (toSpeed - fromSpeed) * progress; let currentAcc = fromAcc + (toAcc - fromAcc) * progress; element._currentSpeed = currentSpeed; element._currentAcc = currentAcc; let color = Config.get('colorCode') ? getColor(currentAcc) : 'var(--telemetry-default-color)'; let text; if (displayMode === 'speed') { text = `${Math.round(currentSpeed)} ${speedUnit}`; } else if (displayMode === 'acceleration') { text = `${currentAcc.toFixed(1)} g`; } else if (displayMode === 'both') { text = `${Math.round(currentSpeed)} ${speedUnit} | ${currentAcc.toFixed(1)} g`; } else { text = ''; } element.innerHTML = text + extraText; element.style.color = color; if (linearProgress < 1) { element._telemetryAnimationFrame = requestAnimationFrame(step); } else { element._telemetryAnimationFrame = null; let finalSpeedText = `${Math.round(toSpeed)} ${speedUnit}`; let finalAccelText = `${toAcc.toFixed(1)} g`; let finalText; if (displayMode === 'speed') { finalText = finalSpeedText; } else if (displayMode === 'acceleration') { finalText = finalAccelText; } else if (displayMode === 'both') { finalText = `${finalSpeedText} | ${finalAccelText}`; } else { finalText = ''; } element.innerHTML = finalText + extraText; element.style.color = Config.get('colorCode') ? getColor(toAcc) : 'var(--telemetry-default-color)'; } } if (element._telemetryAnimationFrame) { cancelAnimationFrame(element._telemetryAnimationFrame); } element._telemetryAnimationFrame = requestAnimationFrame(step); },
+        animateTelemetry(element, fromSpeed, toSpeed, fromAcc, toAcc, animationDuration, displayMode, speedUnit, extraText) {
+            let startTime = null;
+            const easeFunction = this.easeInOutQuad;
+            const getColor = this.getTelemetryColor.bind(this);
+
+            fromSpeed = Number(fromSpeed) || 0;
+            toSpeed = Number(toSpeed) || 0;
+            fromAcc = Number(fromAcc) || 0;
+            toAcc = Number(toAcc) || 0;
+            animationDuration = Number(animationDuration) || 300; // Use provided duration or default
+
+            function step(timestamp) {
+                if (!startTime) startTime = timestamp;
+                let linearProgress = Math.min((timestamp - startTime) / animationDuration, 1);
+                if (isNaN(linearProgress) || animationDuration <= 0) linearProgress = 1;
+
+                let progress = easeFunction(linearProgress);
+                let currentSpeed = fromSpeed + (toSpeed - fromSpeed) * progress;
+                let currentAcc = fromAcc + (toAcc - fromAcc) * progress;
+                element._currentSpeed = currentSpeed; // Store intermediate animated value
+                element._currentAcc = currentAcc;     // Store intermediate animated value
+
+                let color = Config.get('colorCode') ? getColor(currentAcc) : 'var(--telemetry-default-color)';
+                let text = '';
+
+                if (displayMode === 'speed') { text = `${Math.round(currentSpeed)} ${speedUnit}`; }
+                else if (displayMode === 'acceleration') { text = `${currentAcc.toFixed(1)} g`; }
+                else if (displayMode === 'both') { text = `${Math.round(currentSpeed)} ${speedUnit} | ${currentAcc.toFixed(1)} g`; }
+                else { text = ''; } // Should not happen if canAnimate is true
+
+                element.innerHTML = text + extraText;
+                element.style.color = color;
+
+                if (linearProgress < 1) {
+                    element._telemetryAnimationFrame = requestAnimationFrame(step);
+                } else {
+                    // Animation finished, ensure final values are set exactly
+                    element._telemetryAnimationFrame = null;
+                    let finalSpeedText = `${Math.round(toSpeed)} ${speedUnit}`;
+                    let finalAccelText = `${toAcc.toFixed(1)} g`;
+                    let finalText = '';
+                    if (displayMode === 'speed') { finalText = finalSpeedText; }
+                    else if (displayMode === 'acceleration') { finalText = finalAccelText; }
+                    else if (displayMode === 'both') { finalText = `${finalSpeedText} | ${finalAccelText}`; }
+                    element.innerHTML = finalText + extraText;
+                    element.style.color = Config.get('colorCode') ? getColor(toAcc) : 'var(--telemetry-default-color)';
+                    // Clear intermediate values after animation completes
+                    // element._currentSpeed = undefined;
+                    // element._currentAcc = undefined;
+                    // Keep the _currentSpeed/Acc defined so the *next* animation starts smoothly from the *end* of this one
+                    element._currentSpeed = toSpeed;
+                    element._currentAcc = toAcc;
+                }
+            }
+
+            // Cancel any previous animation frame for this element
+            if (element._telemetryAnimationFrame) {
+                cancelAnimationFrame(element._telemetryAnimationFrame);
+            }
+            element._telemetryAnimationFrame = requestAnimationFrame(step);
+        },
         calculateDriverMetrics(driverId, progressPercentage, timestamp) { const prev = State.previousMetrics[driverId] || { progress: progressPercentage, time: timestamp - Config.get('minUpdateInterval'), instantaneousSpeed: 0, reportedSpeed: 0, acceleration: 0, lastDisplayedSpeed: 0, lastDisplayedAcceleration: 0, firstUpdate: true, currentLap: 1, progressInLap: 0, rawLapEstimate: null, smoothedLapEstimate: null, statusClass: 'ready' }; let dt = (timestamp - prev.time) / 1000; const minDt = Config.get('minUpdateInterval') / 1000; if (dt < minDt && !prev.firstUpdate) { return { speed: prev.reportedSpeed, acceleration: prev.acceleration, timeDelta: dt * 1000, noUpdate: true }; } const effectiveDt = Math.max(minDt, dt); const progressDelta = progressPercentage - prev.progress; if (progressDelta < -0.01 && !prev.firstUpdate) { State.previousMetrics[driverId] = { ...prev, time: timestamp }; return { speed: prev.reportedSpeed, acceleration: prev.acceleration, timeDelta: effectiveDt * 1000 }; } const distanceDelta = State.trackInfo.total * Math.max(0, progressDelta) / 100; const currentSpeed = effectiveDt > 0 ? (distanceDelta / effectiveDt) * 3600 : 0; const averagedSpeed = prev.firstUpdate ? currentSpeed : (prev.reportedSpeed * 0.6 + currentSpeed * 0.4); const speedDeltaMps = (averagedSpeed - prev.reportedSpeed) * 0.44704; const acceleration = (prev.firstUpdate || effectiveDt <= 0) ? 0 : (speedDeltaMps / effectiveDt) / 9.81; const totalLaps = State.trackInfo.laps || 1; const percentPerLap = 100 / totalLaps; const currentLap = Math.min(totalLaps, Math.floor(progressPercentage / percentPerLap) + 1); const startPercentOfLap = (currentLap - 1) * percentPerLap; const progressInLap = percentPerLap > 0 ? Math.max(0, Math.min(100, ((progressPercentage - startPercentOfLap) / percentPerLap) * 100)) : 0; State.previousMetrics[driverId] = { ...prev, progress: progressPercentage, time: timestamp, instantaneousSpeed: currentSpeed, reportedSpeed: averagedSpeed, acceleration: acceleration, lastDisplayedSpeed: averagedSpeed, lastDisplayedAcceleration: acceleration, firstUpdate: false, currentLap: currentLap, progressInLap: progressInLap }; return { speed: Math.max(0, averagedSpeed), acceleration, timeDelta: effectiveDt * 1000 }; },
         calculateSmoothedLapEstimate(driverId, metrics) { const driverState = State.previousMetrics[driverId]; if (!driverState || metrics.speed <= 1) { if (driverState) { driverState.rawLapEstimate = null; driverState.smoothedLapEstimate = null; } return null; } const lapLength = State.trackInfo.length || 0; if (lapLength <= 0) return null; const remainingProgressInLap = 100 - driverState.progressInLap; const remainingDistance = lapLength * (remainingProgressInLap / 100); const rawEstimate = (remainingDistance / metrics.speed) * 3600; driverState.rawLapEstimate = rawEstimate; const alpha = Config.get('lapEstimateSmoothingFactor'); let smoothedEstimate; if (driverState.smoothedLapEstimate === null || !isFinite(driverState.smoothedLapEstimate) || isNaN(driverState.smoothedLapEstimate)) { smoothedEstimate = rawEstimate; } else { smoothedEstimate = alpha * rawEstimate + (1 - alpha) * driverState.smoothedLapEstimate; } if (smoothedEstimate > 3600 || smoothedEstimate < 0) { smoothedEstimate = driverState.smoothedLapEstimate ?? rawEstimate; } driverState.smoothedLapEstimate = smoothedEstimate; return smoothedEstimate; }
     };
@@ -340,7 +401,7 @@
                     <div class="settings-item"> <label for="lapEstimateSmoothingFactor">Lap Est. Smoothing (0.01-1.0)</label> <input type="number" id="lapEstimateSmoothingFactor" min="0.01" max="1.0" step="0.01"> </div>
                     <hr style="border: none; border-top: 1px solid var(--border-color); margin: 20px 0;">
                     <div class="settings-item"> <div class="toggle-container"> <label for="fetchApiStatsOnClick">Load Driver API Stats on Click</label> <label class="switch"> <input type="checkbox" id="fetchApiStatsOnClick"> <span class="slider"></span> </label> </div> <small style="color: #aaa; margin-top: 5px;">(Requires API key)</small> </div>
-                    <div class="settings-item"> <label for="apiKey">Torn API Key (Limited Access Recommended)</label> <input type="text" id="apiKey" placeholder="Enter API Key"> </div>
+                    <div class="settings-item"> <label for="apiKey">Torn API Key (Limited Access Recommended)</label> <input type="password" id="apiKey" placeholder="Enter API Key"> </div>
                     <div class="settings-item"> <label for="historicalRaceLimit">Advanced Stats: Races to Analyze</label> <input type="number" id="historicalRaceLimit" min="10" max="1000" step="10"> </div>
                     <hr style="border: none; border-top: 1px solid var(--border-color); margin: 20px 0;">
                     <div class="settings-item"> <label for="historyCheckInterval">History: Check Interval (ms)</label> <input type="number" id="historyCheckInterval" min="5000" max="60000" step="1000"> </div>
@@ -728,7 +789,7 @@
             const historyContentDiv = document.createElement('div');
             historyContentDiv.className = 'history-content';
 
-            const historyLog = HistoryManager.getLog();
+            const historyLog = HistoryManager.getLog(); // Newest entry first
             let chartHTML = '';
             let tableHTML = '';
 
@@ -743,37 +804,50 @@
                     chartHTML = `<p class="no-history-msg">Charting library not loaded.</p>`;
                  }
 
-                tableHTML = `<h3>History Log (Last ${historyLog.length})</h3><table><thead><tr><th>Date & Time</th><th class="numeric">Skill</th><th class="numeric">Class</th><th class="numeric">Points</th></tr></thead><tbody>`;
-                let previousEntry = null;
-                historyLog.forEach(entry => {
-                    const skillChange = previousEntry ? (entry.skill ?? State.lastKnownSkill ?? 0) - (previousEntry.skill ?? State.lastKnownSkill ?? 0) : 0;
-                    const pointsChange = (previousEntry && entry.points !== null && previousEntry.points !== null) ? (entry.points ?? 0) - (previousEntry.points ?? 0) : 0;
+                const formatChange = (value, change, decimals = 2) => {
+                    if (value === null) return 'N/A';
+                    const formattedValue = typeof value === 'number' ? value.toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals }) : value;
+                    if (change === 0 || isNaN(change) || change === null) return formattedValue;
 
-                    const formatChange = (value, change, decimals = 2) => {
-                         if (value === null) return 'N/A';
-                         const formattedValue = typeof value === 'number' ? value.toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals }) : value;
-                         if (change === 0 || isNaN(change) || !previousEntry) return formattedValue;
-                         const sign = change > 0 ? '+' : '';
-                         const changeClass = change > 0 ? 'change-positive' : 'change-negative';
-                         const formattedChange = typeof change === 'number' ? change.toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals }) : change;
-                         return `${formattedValue} <span class="change-indicator ${changeClass}">(${sign}${formattedChange})</span>`;
-                    };
-                     const formatClassChange = (currentClass, previousClass) => {
-                        if (currentClass === null) return 'N/A';
-                        if (!previousClass || currentClass === previousClass) return currentClass;
-                        return `${currentClass} <span class="change-indicator change-neutral">(was ${previousClass})</span>`;
-                    };
+                    const isIncrease = change > 0;
+                    const sign = isIncrease ? '+' : '';
+                    const changeClass = isIncrease ? 'change-positive' : 'change-negative';
+                    const formattedChange = typeof change === 'number' ? change.toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals }) : change;
+
+                    return `${formattedValue} <span class="change-indicator ${changeClass}">(${sign}${formattedChange})</span>`;
+                };
+
+                const formatClassChange = (currentClass, previousClass) => {
+                    if (currentClass === null) return 'N/A';
+                    if (!previousClass || currentClass === previousClass || previousClass === null) return currentClass;
+                    return `${currentClass} <span class="change-indicator change-neutral">(was ${previousClass})</span>`;
+                };
+
+                tableHTML = `<h3>History Log (Last ${historyLog.length})</h3><table><thead><tr><th>Date & Time</th><th class="numeric">Skill</th><th class="numeric">Class</th><th class="numeric">Points</th></tr></thead><tbody>`;
+
+                for (let i = 0; i < historyLog.length; i++) {
+                    const entry = historyLog[i];
+                    const olderEntry = historyLog[i + 1] || null;
+
+                    let skillChange = null;
+                    let pointsChange = null;
+                    let previousClass = null;
+
+                    if (olderEntry) {
+                        skillChange = (entry.skill !== null && olderEntry.skill !== null) ? (entry.skill - olderEntry.skill) : null;
+                        pointsChange = (entry.points !== null && olderEntry.points !== null) ? (entry.points - olderEntry.points) : null;
+                        previousClass = olderEntry.class;
+                    }
 
                     tableHTML += `<tr>
                         <td>${Utils.formatDate(entry.timestamp, true)}</td>
                         <td class="numeric">${formatChange(entry.skill, skillChange, 2)}</td>
-                        <td class="numeric">${formatClassChange(entry.class, previousEntry?.class)}</td>
+                        <td class="numeric">${formatClassChange(entry.class, previousClass)}</td>
                         <td class="numeric">${formatChange(entry.points, pointsChange, 0)}</td>
                     </tr>`;
-                    previousEntry = entry;
-                });
+                }
                 tableHTML += `</tbody></table>`;
-                 historyContentDiv.innerHTML = chartHTML + tableHTML;
+                historyContentDiv.innerHTML = chartHTML + tableHTML;
             }
 
             content.innerHTML = `<div class="history-title">Your Racing Stats History <button class="history-close">×</button></div>`;
@@ -1302,7 +1376,7 @@
                      stopAnimation = true;
                      if (driverState) { driverState.rawLapEstimate = null; driverState.smoothedLapEstimate = null; }
                 }
-                else {
+                else { // Racing state
                     const metrics = Telemetry.calculateDriverMetrics(driverId, driverData.progress, now);
                     if (!metrics.noUpdate || driverState?.firstUpdate) {
                         const targetSpeed = Utils.convertSpeed(metrics.speed, speedUnit);
@@ -1318,32 +1392,49 @@
 
                         if (Config.get('showLapEstimate') && driverData.progress < 100 && State.trackInfo.id && driverState) { const lapEstimateSeconds = Telemetry.calculateSmoothedLapEstimate(driverId, metrics); if (lapEstimateSeconds !== null && isFinite(lapEstimateSeconds) && lapEstimateSeconds > 0) { extraTelemetryText = ` <span class="lap-estimate">(~${Utils.formatTime(lapEstimateSeconds)})</span>`; } else { extraTelemetryText = ''; } } else { extraTelemetryText = ''; }
 
+                        // Determine if simple animation is possible (speed, accel, or both - no progress)
                         const canAnimate = Config.get('animateChanges') && driverState && !driverState.firstUpdate &&
                                           ((displayOptions.length === 1 && displayOptions[0] === 'speed') ||
                                            (displayOptions.length === 1 && displayOptions[0] === 'acceleration') ||
                                            (displayOptions.length === 2 && displayOptions.includes('speed') && displayOptions.includes('acceleration') && !displayOptions.includes('progress')));
 
                         if (canAnimate) {
+                            // Start animation from the last *rendered* value, or the last known state if no animation was running
                             const fromSpeed = (telemetryDiv._currentSpeed !== undefined) ? telemetryDiv._currentSpeed : Math.round(Utils.convertSpeed(driverState.lastDisplayedSpeed || 0, speedUnit));
                             const fromAcc = (telemetryDiv._currentAcc !== undefined) ? telemetryDiv._currentAcc : driverState.lastDisplayedAcceleration || 0;
-                            const duration = metrics.timeDelta;
+                            // Use a fixed animation duration for responsiveness, regardless of the actual time delta
+                            const animationDuration = Config.get('minUpdateInterval'); // Default 300ms
+
                             let animationMode = '';
                             if (displayOptions.includes('speed') && displayOptions.includes('acceleration')) animationMode = 'both';
                             else if (displayOptions.includes('speed')) animationMode = 'speed';
                             else if (displayOptions.includes('acceleration')) animationMode = 'acceleration';
 
-                            Telemetry.animateTelemetry(telemetryDiv, fromSpeed, Math.round(targetSpeed), fromAcc, targetAcc, duration, animationMode, speedUnit, extraTelemetryText);
+                            Telemetry.animateTelemetry(telemetryDiv, fromSpeed, Math.round(targetSpeed), fromAcc, targetAcc, animationDuration, animationMode, speedUnit, extraTelemetryText);
                         } else {
+                            // If animation is disabled or not applicable (e.g., includes progress), stop any running animation and set text directly
                             stopAnimation = true;
                         }
+                        // Update the driver's state with the latest calculated values
                         if (driverState) { driverState.lastDisplayedSpeed = metrics.speed; driverState.lastDisplayedAcceleration = targetAcc; }
-                    } else {
-                        telemetryText = telemetryDiv.innerHTML.split('<span class="lap-estimate">')[0].trim();
+                    } else { // No metric update, just update extra text if needed
+                        telemetryText = telemetryDiv.innerHTML.split('<span class="lap-estimate">')[0].trim(); // Keep existing text
                         if (Config.get('showLapEstimate') && driverData.progress < 100 && State.trackInfo.id && driverState) { const lapEstimateSeconds = driverState.smoothedLapEstimate; if (lapEstimateSeconds !== null && isFinite(lapEstimateSeconds) && lapEstimateSeconds > 0) { extraTelemetryText = ` <span class="lap-estimate">(~${Utils.formatTime(lapEstimateSeconds)})</span>`; } else { extraTelemetryText = ''; } } else { extraTelemetryText = ''; }
-                        telemetryDiv.innerHTML = telemetryText + extraTelemetryText;
+                        telemetryDiv.innerHTML = telemetryText + extraTelemetryText; // Update only extra text potentially
                     }
                 }
-                if (stopAnimation) { if (telemetryDiv._telemetryAnimationFrame) cancelAnimationFrame(telemetryDiv._telemetryAnimationFrame); telemetryDiv.innerHTML = telemetryText + extraTelemetryText; telemetryDiv.style.color = telemetryColor; telemetryDiv._currentSpeed = undefined; telemetryDiv._currentAcc = undefined; }
+                // If animation needs to be stopped or wasn't started, set final text/color directly
+                if (stopAnimation) {
+                    if (telemetryDiv._telemetryAnimationFrame) {
+                        cancelAnimationFrame(telemetryDiv._telemetryAnimationFrame);
+                        telemetryDiv._telemetryAnimationFrame = null;
+                    }
+                    telemetryDiv.innerHTML = telemetryText + extraTelemetryText;
+                    telemetryDiv.style.color = telemetryColor;
+                    // Reset intermediate animation values if stopped mid-animation
+                    telemetryDiv._currentSpeed = undefined;
+                    telemetryDiv._currentAcc = undefined;
+                }
             }
 
             const detailsDiv = element.querySelector('.driver-details');
@@ -1489,24 +1580,23 @@
                 finally { State.isFetchingPoints = false; }
             }
 
-            const skillChanged = currentSkill !== null && currentSkill !== State.lastKnownSkill;
-            const classChanged = currentClass !== null && currentClass !== State.lastKnownClass;
-            const pointsChanged = currentPoints !== null && currentPoints !== State.lastKnownPoints;
+            const latestLogEntry = State.historyLog.length > 0 ? State.historyLog[0] : null;
+            const skillChanged = currentSkill !== null && (!latestLogEntry || currentSkill !== latestLogEntry.skill);
+            const classChanged = currentClass !== null && (!latestLogEntry || currentClass !== latestLogEntry.class);
+            const pointsChanged = currentPoints !== null && (!latestLogEntry || currentPoints !== latestLogEntry.points);
 
-            if ( (State.lastKnownSkill === null && currentSkill !== null) ||
-                 (State.lastKnownClass === null && currentClass !== null) ||
-                 (State.lastKnownPoints === null && currentPoints !== null) ||
-                 skillChanged || classChanged || pointsChanged )
-            {
+            if (!latestLogEntry || skillChanged || classChanged || pointsChanged) {
                  if (currentSkill !== null || currentClass !== null || currentPoints !== null) {
                      const newEntry = { timestamp: Date.now(), skill: currentSkill, class: currentClass, points: currentPoints };
                      State.historyLog.unshift(newEntry);
                      const limit = Config.get('historyLogLimit');
                      if (State.historyLog.length > limit) { State.historyLog = State.historyLog.slice(0, limit); }
                      this.saveLog();
+
                      State.lastKnownSkill = currentSkill;
                      State.lastKnownClass = currentClass;
                      State.lastKnownPoints = currentPoints;
+
                      if (State.historyPanelInstance) { UI.createHistoryPanel(); }
                  }
             }
