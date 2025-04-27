@@ -22,7 +22,7 @@
     'use strict';
 
     const ScriptInfo = {
-        version: typeof GM_info !== 'undefined' ? GM_info.script.version : '3.1.6',
+        version: '3.1.6',
         author: "TheProgrammer",
         contactId: "2782979",
         contactUrl: function() { return `https://www.torn.com/profiles.php?XID=${this.contactId}`; },
