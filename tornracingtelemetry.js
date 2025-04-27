@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn Racing Telemetry
 // @namespace    https://www.torn.com/profiles.php?XID=2782979
-// @version      3.1.6
+// @version      3.1.7
 // @description  Enhanced Torn Racing UI: Telemetry, driver stats, advanced stats panel, history tracking, and race results export.
 // @match        https://www.torn.com/page.php?sid=racing*
 // @match        https://www.torn.com/loader.php?sid=racing*
@@ -22,13 +22,14 @@
     'use strict';
 
     const ScriptInfo = {
-        version: '3.1.6',
+        version: '3.1.7',
         author: "TheProgrammer",
         contactId: "2782979",
         contactUrl: function() { return `https://www.torn.com/profiles.php?XID=${this.contactId}`; },
         description: "Provides enhanced telemetry, stats analysis, historical tracking, and race results export for Torn Racing.",
         notes: [
             "Your API key and all other script data (settings, history log) are stored **locally** in your browser's userscript storage. They are **never** transmitted anywhere except to the official Torn API when fetching data.",
+            "v3.1.7 (Fixed): Implemented refined speed calculation to prevent initial high-speed spike when loading the page mid-race. Speed now starts at 0 and calculates correctly after the first observed progress change.",
             "v3.1.6 (Refined): Applied stronger, configurable smoothing to speed calculations *only* when progress changes, to reduce jumping while keeping the fix for the zero-speed drop. API key is password field. Animation uses capped time delta.",
             "Since version 3.1.0, the API key is stored separately from other settings, meaning it should **not** be cleared when the script updates or if you use the 'Clear Script Data' button.",
             "Use the 'Clear API Key' button specifically to remove the key.",
@@ -54,11 +55,11 @@
             statsPanelEnabled: true,
             historyCheckInterval: 15000,
             historyLogLimit: 10,
-            speedSmoothingFactor: 0.7, // Weight of *previous* speed when smoothing (0.0 to 1.0)
-            maxAnimationDurationMs: 1000 // Cap animation time for large update gaps
+            speedSmoothingFactor: 0.7,
+            maxAnimationDurationMs: 1000
         },
         data: {},
-        storageKey: 'racingCustomUITelemetryConfig_v3.1.3', // Keeping key as requested
+        storageKey: 'racingCustomUITelemetryConfig_v3.1.3',
         apiKeyStorageKey: 'racingCustomUITelemetryApiKey_persistent',
 
         load() {
@@ -74,14 +75,12 @@
                     this.data[key] = this.defaults[key];
                 }
             }
-             // Ensure new defaults exist if loading older config
              if (!('speedSmoothingFactor' in this.data)) {
                 this.data.speedSmoothingFactor = this.defaults.speedSmoothingFactor;
             }
              if (!('maxAnimationDurationMs' in this.data)) {
                 this.data.maxAnimationDurationMs = this.defaults.maxAnimationDurationMs;
             }
-            // Clean up old lerp rate if present
             if ('animationLerpRate' in this.data) {
                 delete this.data.animationLerpRate;
                 this.save();
@@ -135,7 +134,7 @@
 
         resetRaceState() {
             document.querySelectorAll('.driver-telemetry-display').forEach(el => {
-                if (el._animationRAF) cancelAnimationFrame(el._animationRAF); // Use specific name
+                if (el._animationRAF) cancelAnimationFrame(el._animationRAF);
                 el._animationRAF = null;
                 el._currentAnimSpeed = undefined;
                 el._currentAnimAcc = undefined;
@@ -326,7 +325,6 @@
         easeInOutQuad(t) { return t < 0.5 ? 2*t*t : -1+(4-2*t)*t; },
         interpolateColor(color1, color2, factor) { const result = color1.map((c, i) => Math.round(c + factor * (color2[i] - c))); return `rgb(${result[0]}, ${result[1]}, ${result[2]})`; },
         getTelemetryColor(acceleration) { const grey = [136, 136, 136]; const green = [76, 175, 80]; const red = [244, 67, 54]; const defaultColor = getComputedStyle(document.documentElement).getPropertyValue('--telemetry-default-color').match(/\d+/g)?.map(Number) || grey; const accelColor = getComputedStyle(document.documentElement).getPropertyValue('--telemetry-accel-color').match(/\d+/g)?.map(Number) || green; const decelColor = getComputedStyle(document.documentElement).getPropertyValue('--telemetry-decel-color').match(/\d+/g)?.map(Number) || red; if (!Config.get('colorCode')) return `rgb(${defaultColor.join(', ')})`; const maxAcc = 1.0; let factor = Math.min(Math.abs(acceleration) / maxAcc, 1); factor = isNaN(factor) ? 0 : factor; if (acceleration > 0.05) return this.interpolateColor(defaultColor, accelColor, factor); if (acceleration < -0.05) return this.interpolateColor(defaultColor, decelColor, factor); return `rgb(${defaultColor.join(', ')})`; },
-        // Refined calculation logic (from v3.1.6 attempt)
         calculateDriverMetrics(driverId, progressPercentage, timestamp) {
             const prev = State.previousMetrics[driverId] || {
                 progress: 0,
@@ -345,12 +343,39 @@
                 statusClass: 'ready'
             };
 
-            let dt = (timestamp - prev.time) / 1000;
             const minDt = Config.get('minUpdateInterval') / 1000;
+            let dt = (timestamp - prev.time) / 1000;
 
-             if (dt < minDt && !prev.firstUpdate) {
+            if (prev.firstUpdate) {
+                const totalLaps = State.trackInfo.laps || 1;
+                const percentPerLap = 100 / totalLaps;
+                const currentLap = Math.min(totalLaps, Math.floor(progressPercentage / percentPerLap) + 1);
+                const startPercentOfLap = (currentLap - 1) * percentPerLap;
+                const progressInLap = percentPerLap > 0 ? Math.max(0, Math.min(100, ((progressPercentage - startPercentOfLap) / percentPerLap) * 100)) : 0;
+
+                State.previousMetrics[driverId] = {
+                    ...prev,
+                    progress: progressPercentage,
+                    time: timestamp,
+                    lastProgressValueAtChange: progressPercentage,
+                    lastProgressChangeTimestamp: timestamp,
+                    reportedSpeed: 0,
+                    acceleration: 0,
+                    lastDisplayedSpeed: 0,
+                    lastDisplayedAcceleration: 0,
+                    firstUpdate: false,
+                    currentLap: currentLap,
+                    progressInLap: progressInLap,
+                    rawLapEstimate: null,
+                    smoothedLapEstimate: null,
+                };
+                return { speed: 0, acceleration: 0, timeDelta: dt * 1000, noUpdate: true };
+            }
+
+            if (dt < minDt) {
                  return { speed: prev.reportedSpeed, acceleration: prev.acceleration, timeDelta: dt * 1000, noUpdate: true };
-             }
+            }
+
             const effectiveDt = Math.max(minDt, dt);
 
             let currentSpeed = prev.reportedSpeed;
@@ -359,20 +384,24 @@
             const epsilon = 0.001;
             const progressChanged = Math.abs(progressPercentage - prev.lastProgressValueAtChange) > epsilon;
 
-            if (progressChanged || prev.firstUpdate) {
+            if (progressChanged) {
                  const dtSinceChange = (timestamp - prev.lastProgressChangeTimestamp) / 1000;
                  const progressDeltaSinceChange = progressPercentage - prev.lastProgressValueAtChange;
 
-                 if (dtSinceChange > 0 && progressDeltaSinceChange >= 0) {
+                 if (dtSinceChange > 0 && progressDeltaSinceChange > 0) {
                     const distanceDelta = State.trackInfo.total * (progressDeltaSinceChange / 100);
                     const speedMph = (distanceDelta / dtSinceChange) * 3600;
-                    // Apply stronger smoothing when recalculating based on progress change
-                    const smoothingFactor = Config.get('speedSmoothingFactor'); // e.g., 0.7 or 0.8
-                    currentSpeed = prev.firstUpdate ? speedMph : (prev.reportedSpeed * smoothingFactor + speedMph * (1.0 - smoothingFactor));
+                    const smoothingFactor = Config.get('speedSmoothingFactor');
+                    currentSpeed = (prev.reportedSpeed * smoothingFactor + speedMph * (1.0 - smoothingFactor));
                     calculatedSpeedThisTick = true;
 
                     prev.lastProgressValueAtChange = progressPercentage;
                     prev.lastProgressChangeTimestamp = timestamp;
+                 } else if (progressDeltaSinceChange <= 0 && dtSinceChange > 0.1) {
+                    const decayFactor = Math.max(0.1, 1.0 - (dtSinceChange * 0.5));
+                    currentSpeed = prev.reportedSpeed * decayFactor;
+                    prev.lastProgressChangeTimestamp = timestamp;
+                    calculatedSpeedThisTick = true;
                  } else {
                     currentSpeed = prev.reportedSpeed;
                  }
@@ -380,8 +409,10 @@
                  currentSpeed = prev.reportedSpeed;
             }
 
+            currentSpeed = Math.max(0, currentSpeed);
+
             const speedDeltaMps = (currentSpeed - prev.reportedSpeed) * 0.44704;
-            const acceleration = (prev.firstUpdate || effectiveDt <= 0) ? 0 : (speedDeltaMps / effectiveDt) / 9.81;
+            const acceleration = (effectiveDt <= 0) ? 0 : (speedDeltaMps / effectiveDt) / 9.81;
 
             const totalLaps = State.trackInfo.laps || 1;
             const percentPerLap = 100 / totalLaps;
@@ -399,43 +430,38 @@
                  acceleration: acceleration,
                  lastDisplayedSpeed: currentSpeed,
                  lastDisplayedAcceleration: acceleration,
-                 firstUpdate: false,
                  currentLap: currentLap,
                  progressInLap: progressInLap
             };
 
             return {
-                speed: Math.max(0, currentSpeed),
+                speed: currentSpeed,
                 acceleration: acceleration,
                 timeDelta: effectiveDt * 1000,
-                noUpdate: !calculatedSpeedThisTick && !prev.firstUpdate
+                noUpdate: !calculatedSpeedThisTick
             };
         },
         calculateSmoothedLapEstimate(driverId, metrics) { const driverState = State.previousMetrics[driverId]; if (!driverState || metrics.speed <= 1) { if (driverState) { driverState.rawLapEstimate = null; driverState.smoothedLapEstimate = null; } return null; } const lapLength = State.trackInfo.length || 0; if (lapLength <= 0) return null; const remainingProgressInLap = 100 - driverState.progressInLap; const remainingDistance = lapLength * (remainingProgressInLap / 100); const rawEstimate = (remainingDistance / metrics.speed) * 3600; driverState.rawLapEstimate = rawEstimate; const alpha = Config.get('lapEstimateSmoothingFactor'); let smoothedEstimate; if (driverState.smoothedLapEstimate === null || !isFinite(driverState.smoothedLapEstimate) || isNaN(driverState.smoothedLapEstimate)) { smoothedEstimate = rawEstimate; } else { smoothedEstimate = alpha * rawEstimate + (1 - alpha) * driverState.smoothedLapEstimate; } if (smoothedEstimate > 3600 || smoothedEstimate < 0) { smoothedEstimate = driverState.smoothedLapEstimate ?? rawEstimate; } driverState.smoothedLapEstimate = smoothedEstimate; return smoothedEstimate; },
-        // Time-delta based animation with interruption handling
         animateTelemetry(element, fromSpeed, toSpeed, fromAcc, toAcc, duration, displayMode, speedUnit, extraText) {
             let startTime = null;
-            const easeFunction = this.easeInOutQuad; // Or another preferred easing
+            const easeFunction = this.easeInOutQuad;
             const getColor = this.getTelemetryColor.bind(this);
 
-            // Ensure numeric values
             fromSpeed = Number(fromSpeed) || 0;
             toSpeed = Number(toSpeed) || 0;
             fromAcc = Number(fromAcc) || 0;
             toAcc = Number(toAcc) || 0;
-            // Use provided duration (capped timeDelta) but ensure it's reasonable
             duration = Math.max(Config.get('minUpdateInterval'), Math.min(Number(duration) || Config.get('minUpdateInterval'), Config.get('maxAnimationDurationMs')));
 
             function step(timestamp) {
                 if (!startTime) startTime = timestamp;
-                // Calculate progress based on capped duration
                 let linearProgress = Math.min((timestamp - startTime) / duration, 1);
                 if (isNaN(linearProgress) || duration <= 0) linearProgress = 1;
 
                 let progress = easeFunction(linearProgress);
                 let currentSpeed = fromSpeed + (toSpeed - fromSpeed) * progress;
                 let currentAcc = fromAcc + (toAcc - fromAcc) * progress;
-                element._currentAnimSpeed = currentSpeed; // Store intermediate for smooth interruption
+                element._currentAnimSpeed = currentSpeed;
                 element._currentAnimAcc = currentAcc;
 
                 let color = Config.get('colorCode') ? getColor(currentAcc) : 'var(--telemetry-default-color)';
@@ -460,12 +486,11 @@
                     else if (displayMode === 'both') { finalText = `${finalSpeedText} | ${finalAccelText}`; }
                     element.innerHTML = finalText + extraText;
                     element.style.color = Config.get('colorCode') ? getColor(toAcc) : 'var(--telemetry-default-color)';
-                    element._currentAnimSpeed = undefined; // Clear intermediate values
+                    element._currentAnimSpeed = undefined;
                     element._currentAnimAcc = undefined;
                 }
             }
 
-            // Cancel previous animation if any
             if (element._animationRAF) {
                 cancelAnimationFrame(element._animationRAF);
             }
@@ -531,8 +556,8 @@
             content.querySelector('#speedUnit').value = Config.get('speedUnit');
             content.querySelector('#colorCode').checked = Config.get('colorCode');
             content.querySelector('#animateChanges').checked = Config.get('animateChanges');
-            content.querySelector('#speedSmoothingFactor').value = Config.get('speedSmoothingFactor'); // New setting
-            content.querySelector('#maxAnimationDurationMs').value = Config.get('maxAnimationDurationMs'); // New setting
+            content.querySelector('#speedSmoothingFactor').value = Config.get('speedSmoothingFactor');
+            content.querySelector('#maxAnimationDurationMs').value = Config.get('maxAnimationDurationMs');
             content.querySelector('#showLapEstimate').checked = Config.get('showLapEstimate');
             content.querySelector('#lapEstimateSmoothingFactor').value = Config.get('lapEstimateSmoothingFactor');
             content.querySelector('#fetchApiStatsOnClick').checked = Config.get('fetchApiStatsOnClick');
@@ -563,10 +588,10 @@
                 Config.set('speedUnit', content.querySelector('#speedUnit').value);
                 Config.set('colorCode', content.querySelector('#colorCode').checked);
                 Config.set('animateChanges', content.querySelector('#animateChanges').checked);
-                let speedSmooth = parseFloat(content.querySelector('#speedSmoothingFactor').value); // New setting
+                let speedSmooth = parseFloat(content.querySelector('#speedSmoothingFactor').value);
                 if (isNaN(speedSmooth) || speedSmooth < 0.1 || speedSmooth > 0.9) { speedSmooth = Config.defaults.speedSmoothingFactor; content.querySelector('#speedSmoothingFactor').value = speedSmooth; Utils.showNotification('Invalid Speed Smoothing Factor, reset to default.', 'error'); }
                 Config.set('speedSmoothingFactor', speedSmooth);
-                let animDuration = parseInt(content.querySelector('#maxAnimationDurationMs').value, 10); // New setting
+                let animDuration = parseInt(content.querySelector('#maxAnimationDurationMs').value, 10);
                 if (isNaN(animDuration) || animDuration < 100 || animDuration > 3000) { animDuration = Config.defaults.maxAnimationDurationMs; content.querySelector('#maxAnimationDurationMs').value = animDuration; Utils.showNotification('Invalid Max Animation Duration, reset to default.', 'error'); }
                 Config.set('maxAnimationDurationMs', animDuration);
                 Config.set('showLapEstimate', content.querySelector('#showLapEstimate').checked);
@@ -862,7 +887,7 @@
 
              if (topCarsData && topCarsData.length > 0) {
                  const ctxTopCars = document.getElementById('topCarsChart')?.getContext('2d');
-                 if(ctxTopCars) {
+                 if(ctxTopCars && typeof trackRecords !== 'undefined') {
                      const topCars = topCarsData.slice(0, 10);
                      Utils.createChart(ctxTopCars, {
                          type: 'bar',
@@ -1225,7 +1250,7 @@
                 if (!response.ok) {
                     let errorMsg = `HTTP error ${response.status}`;
                     let errorData = null;
-                    try { errorData = await response.json(); } catch (e) { /* Ignore parsing error */ }
+                    try { errorData = await response.json(); } catch (e) { }
                     if (errorData && errorData.error?.error) { errorMsg = `API Error: ${errorData.error.error} (Code ${errorData.error.code})`; }
                     throw new Error(errorMsg);
                 }
@@ -1471,9 +1496,8 @@
                 const speedUnit = Config.get('speedUnit');
                 let extraTelemetryText = '';
 
-                // --- Handle Non-Racing States ---
                  if (driverData.statusClass === 'crashed' || driverData.statusClass === 'finished' || driverData.statusClass === 'ready') {
-                    if (telemetryDiv._animationRAF) { // Stop animation if running
+                    if (telemetryDiv._animationRAF) {
                          cancelAnimationFrame(telemetryDiv._animationRAF);
                          telemetryDiv._animationRAF = null;
                          telemetryDiv._currentAnimSpeed = undefined;
@@ -1495,7 +1519,7 @@
                             avgSpeedFormatted = `~${Math.round(Utils.convertSpeed(avgSpeed, speedUnit))} ${speedUnit}`;
                         }
                         telemetryText = `🏁 ${finishTimeText} (${avgSpeedFormatted})`;
-                    } else { // Ready state
+                    } else {
                          const displayParts = [];
                          if (displayOptions.includes('speed')) displayParts.push(`0 ${speedUnit}`);
                          if (displayOptions.includes('acceleration')) displayParts.push(`0.0 g`);
@@ -1506,12 +1530,11 @@
                     telemetryDiv.innerHTML = telemetryText;
                     telemetryDiv.style.color = telemetryColor;
 
-                } else { // --- Handle Racing State ---
+                } else {
                     const metrics = Telemetry.calculateDriverMetrics(driverId, driverData.progress, now);
                     const targetSpeed = Utils.convertSpeed(metrics.speed, speedUnit);
                     const targetAcc = metrics.acceleration;
 
-                     // Calculate lap estimate text separately
                     if (Config.get('showLapEstimate') && driverData.progress < 100 && State.trackInfo.id && driverState) {
                         const lapEstimateSeconds = Telemetry.calculateSmoothedLapEstimate(driverId, metrics);
                         if (lapEstimateSeconds !== null && isFinite(lapEstimateSeconds) && lapEstimateSeconds > 0) {
@@ -1519,15 +1542,13 @@
                         }
                     }
 
-                    // Determine if simple animation is possible
                     const canAnimate = Config.get('animateChanges') && driverState && !driverState.firstUpdate &&
                                       (displayOptions.includes('speed') || displayOptions.includes('acceleration')) &&
                                       !displayOptions.includes('progress');
 
                     if (canAnimate) {
-                        // Read current animated value if available, otherwise use last calculated reported value
-                        const fromSpeed = (telemetryDiv._currentAnimSpeed !== undefined) ? telemetryDiv._currentAnimSpeed : Math.round(Utils.convertSpeed(driverState.reportedSpeed || 0, speedUnit));
-                        const fromAcc = (telemetryDiv._currentAnimAcc !== undefined) ? telemetryDiv._currentAnimAcc : driverState.acceleration || 0;
+                        const fromSpeed = (telemetryDiv._currentAnimSpeed !== undefined) ? telemetryDiv._currentAnimSpeed : Math.round(Utils.convertSpeed(driverState.lastDisplayedSpeed || 0, speedUnit));
+                        const fromAcc = (telemetryDiv._currentAnimAcc !== undefined) ? telemetryDiv._currentAnimAcc : driverState.lastDisplayedAcceleration || 0;
 
                         const animationDuration = Math.min(metrics.timeDelta || Config.get('minUpdateInterval'), Config.get('maxAnimationDurationMs'));
 
@@ -1538,15 +1559,14 @@
 
                         if (animationMode) {
                              Telemetry.animateTelemetry(telemetryDiv, fromSpeed, Math.round(targetSpeed), fromAcc, targetAcc, animationDuration, animationMode, speedUnit, extraTelemetryText);
-                        } else { // Fallback to static if animation mode is invalid
+                        } else {
                             if (telemetryDiv._animationRAF) cancelAnimationFrame(telemetryDiv._animationRAF);
                             telemetryDiv._animationRAF = null;
-                            telemetryDiv.innerHTML = `${Math.round(targetSpeed)} ${speedUnit}${extraTelemetryText}`; // Default to speed if mode fails
+                            telemetryDiv.innerHTML = `${Math.round(targetSpeed)} ${speedUnit}${extraTelemetryText}`;
                              telemetryDiv.style.color = Config.get('colorCode') ? Telemetry.getTelemetryColor(targetAcc) : 'var(--telemetry-default-color)';
                         }
 
                     } else {
-                        // Animation disabled or includes progress: Stop loop and set statically
                          if (telemetryDiv._animationRAF) {
                              cancelAnimationFrame(telemetryDiv._animationRAF);
                              telemetryDiv._animationRAF = null;
@@ -1580,9 +1600,8 @@
                         telemetryDiv.innerHTML = staticText + extraTelemetryText;
                         telemetryDiv.style.color = staticColor;
                     }
-                     // Update last displayed values AFTER potential animation call
                      if (driverState) {
-                        driverState.lastDisplayedSpeed = metrics.speed; // Store the actual calculated speed
+                        driverState.lastDisplayedSpeed = metrics.speed;
                         driverState.lastDisplayedAcceleration = metrics.acceleration;
                      }
                 }
@@ -1621,8 +1640,8 @@
                     if (driverState || driverData.statusClass !== 'racing') {
                         updateDetailStat('.detail-lap', `${driverState?.currentLap || '-'}/${State.trackInfo.laps || '-'}`, '-/-');
                         updateDetailStat('.detail-lap-progress', `${driverState?.progressInLap !== undefined ? driverState.progressInLap.toFixed(1) : '-'}%`, '-%');
-                        updateDetailStat('.detail-calc-speed', `${driverState?.reportedSpeed !== undefined ? driverState.reportedSpeed.toFixed(1) : '-'}`, '-');
-                        updateDetailStat('.detail-calc-accel', `${driverState?.acceleration !== undefined ? driverState.acceleration.toFixed(3) : '-'}`, '-');
+                        updateDetailStat('.detail-calc-speed', `${driverState?.lastDisplayedSpeed !== undefined ? driverState.lastDisplayedSpeed.toFixed(1) : '-'}`, '-');
+                        updateDetailStat('.detail-calc-accel', `${driverState?.lastDisplayedAcceleration !== undefined ? driverState.lastDisplayedAcceleration.toFixed(3) : '-'}`, '-');
                         const estLapTimeEl = detailsDiv.querySelector('.detail-est-lap-time'); const estLapParaEl = detailsDiv.querySelector('.p-est-lap-time');
                         if (estLapTimeEl && estLapParaEl) { const isRacing = driverData.statusClass === 'racing'; const estLapVisible = isRacing && Config.get('showLapEstimate') && driverState?.smoothedLapEstimate !== null && isFinite(driverState?.smoothedLapEstimate) && State.trackInfo.id && driverState?.smoothedLapEstimate > 0; if (estLapVisible) { estLapTimeEl.textContent = `${Utils.formatTime(driverState.smoothedLapEstimate)} (Raw: ${driverState.rawLapEstimate !== null && isFinite(driverState.rawLapEstimate) ? Utils.formatTime(driverState.rawLapEstimate) : '--:--'})`; estLapParaEl.style.display = ''; } else { estLapTimeEl.textContent = 'N/A'; estLapParaEl.style.display = 'none'; } }
                     }
@@ -1645,7 +1664,7 @@
             newDriversData.forEach((driverData, index) => { const position = index + 1; let element = currentElementsMap.get(driverData.userId); if (element) { this.updateDriverElement(element, driverData, position); newElementsToProcess.set(driverData.userId, { data: driverData, element: element, position: position }); currentElementsMap.delete(driverData.userId); } else { element = this.createDriverElement(driverData, position); newElementsToProcess.set(driverData.userId, { data: driverData, element: element, position: position }); } });
             currentElementsMap.forEach((elementToRemove, removedUserId) => {
                  const telemetryDiv = elementToRemove.querySelector('.driver-telemetry-display');
-                 if (telemetryDiv && telemetryDiv._animationRAF) { // Check specific RAF name
+                 if (telemetryDiv && telemetryDiv._animationRAF) {
                      cancelAnimationFrame(telemetryDiv._animationRAF);
                  }
                  if(State.previousMetrics[removedUserId]) { delete State.previousMetrics[removedUserId]; delete State.lastUpdateTimes[removedUserId]; }
@@ -1779,9 +1798,9 @@
         if (State.observers.length > 0) { State.observers.forEach(obs => obs.disconnect()); State.observers = []; }
         if (State.historyCheckIntervalId) { clearInterval(State.historyCheckIntervalId); State.historyCheckIntervalId = null; }
         document.querySelectorAll('.driver-telemetry-display').forEach(el => {
-            if (el._animationRAF) cancelAnimationFrame(el._animationRAF); // Stop old animation loop
-             el._animationRAF = null; // Clear ID
-             el._currentAnimSpeed = undefined; // Clear intermediate state
+            if (el._animationRAF) cancelAnimationFrame(el._animationRAF);
+             el._animationRAF = null;
+             el._currentAnimSpeed = undefined;
              el._currentAnimAcc = undefined;
         });
         State.controlsContainer?.remove();
