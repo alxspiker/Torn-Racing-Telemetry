@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn Racing Telemetry
 // @namespace    https://www.torn.com/profiles.php?XID=2782979
-// @version      3.1.7
+// @version      3.1.8
 // @description  Enhanced Torn Racing UI: Telemetry, driver stats, advanced stats panel, history tracking, and race results export.
 // @match        https://www.torn.com/page.php?sid=racing*
 // @match        https://www.torn.com/loader.php?sid=racing*
@@ -22,13 +22,14 @@
     'use strict';
 
     const ScriptInfo = {
-        version: '3.1.7',
+        version: '3.1.8',
         author: "TheProgrammer",
         contactId: "2782979",
         contactUrl: function() { return `https://www.torn.com/profiles.php?XID=${this.contactId}`; },
         description: "Provides enhanced telemetry, stats analysis, historical tracking, and race results export for Torn Racing.",
         notes: [
             "Your API key and all other script data (settings, history log) are stored **locally** in your browser's userscript storage. They are **never** transmitted anywhere except to the official Torn API when fetching data.",
+            "v3.1.8 (Compatibility): Added support for Torn PDA mobile app by dynamically loading Chart.js when in the mobile environment.",
             "v3.1.7 (Fixed): Implemented refined speed calculation to prevent initial high-speed spike when loading the page mid-race. Speed now starts at 0 and calculates correctly after the first observed progress change.",
             "v3.1.6 (Refined): Applied stronger, configurable smoothing to speed calculations *only* when progress changes, to reduce jumping while keeping the fix for the zero-speed drop. API key is password field. Animation uses capped time delta.",
             "Since version 3.1.0, the API key is stored separately from other settings, meaning it should **not** be cleared when the script updates or if you use the 'Clear Script Data' button.",
@@ -43,6 +44,54 @@
 
     if (window.racingCustomUITelemetryHasRun) return;
     window.racingCustomUITelemetryHasRun = true;
+
+    // Check if we're running in Torn PDA
+    const isPDA = typeof window.flutter_inappwebview !== 'undefined' &&
+                typeof window.flutter_inappwebview.callHandler === 'function';
+
+    // Function to load Chart.js in PDA environment
+    async function loadChartJsInPDA() {
+        try {
+            // Make sure the platform is ready
+            if (typeof __PDA_platformReadyPromise !== 'undefined') {
+                await __PDA_platformReadyPromise;
+            }
+            
+            // Use PDA's HTTP GET to fetch Chart.js
+            const chartJsUrl = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js';
+            const response = await window.flutter_inappwebview.callHandler(
+                "PDA_httpGet", 
+                chartJsUrl, 
+                {}
+            );
+            
+            // If we got a valid response, evaluate the code
+            if (response && response.status === 200 && response.responseText) {
+                await window.flutter_inappwebview.callHandler(
+                    "PDA_evaluateJavascript", 
+                    response.responseText
+                );
+                console.log("Torn Racing Telemetry: Successfully loaded Chart.js in PDA environment");
+                return true;
+            } else {
+                console.error("Torn Racing Telemetry: Failed to fetch Chart.js in PDA environment", response);
+                return false;
+            }
+        } catch (error) {
+            console.error("Torn Racing Telemetry: Error loading Chart.js in PDA environment", error);
+            return false;
+        }
+    }
+
+    // Load Chart.js if needed
+    if (isPDA) {
+        console.log("Torn Racing Telemetry: Running in Torn PDA environment");
+        loadChartJsInPDA().then(success => {
+            if (!success) {
+                console.error("Torn Racing Telemetry: Charts will not be available in PDA");
+            }
+        });
+    }
 
     const Config = {
         defaults: {
