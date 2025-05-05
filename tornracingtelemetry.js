@@ -1905,16 +1905,21 @@
             HistoryManager.startCheckInterval();
 
             if (State.observers.length === 0 && document.body.contains(State.originalLeaderboard)) {
+                // Add debounce to leaderboard updates
+                let updateTimeout = null;
                 const observer = new MutationObserver(() => {
-                    window.requestAnimationFrame(async () => {
-                        if (State.isUpdating || !State.isInitialized) return;
-                         try {
-                            await RaceManager.updateTrackAndClassInfo();
-                            RaceManager.stableUpdateCustomList();
-                        } catch (e) {
-                             console.error("Telemetry Script: Error during leaderboard update:", e);
-                        }
-                    });
+                    if (updateTimeout) clearTimeout(updateTimeout);
+                    updateTimeout = setTimeout(() => {
+                        window.requestAnimationFrame(async () => {
+                            if (State.isUpdating || !State.isInitialized) return;
+                            try {
+                                await RaceManager.updateTrackAndClassInfo();
+                                RaceManager.stableUpdateCustomList();
+                            } catch (e) {
+                                console.error("Telemetry Script: Error during leaderboard update:", e);
+                            }
+                        });
+                    }, 100); // 100ms debounce
                 });
                 const observerConfig = { childList: true, subtree: true, attributes: true, characterData: true };
                 observer.observe(State.originalLeaderboard, observerConfig);
