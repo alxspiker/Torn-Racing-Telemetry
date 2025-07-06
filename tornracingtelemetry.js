@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn Racing Telemetry
 // @namespace    https://www.torn.com/profiles.php?XID=2782979
-// @version      3.1.9
+// @version      3.2.1
 // @description  Enhanced Torn Racing UI: Telemetry, driver stats, advanced stats panel, history tracking, and race results export.
 // @match        https://www.torn.com/page.php?sid=racing*
 // @match        https://www.torn.com/loader.php?sid=racing*
@@ -22,23 +22,18 @@
     'use strict';
 
     const ScriptInfo = {
-        version: '3.1.9',
+        version: '3.2.1',
         author: "TheProgrammer",
         contactId: "2782979",
         contactUrl: function() { return `https://www.torn.com/profiles.php?XID=${this.contactId}`; },
         description: "Provides enhanced telemetry, stats analysis, historical tracking, and race results export for Torn Racing.",
         notes: [
             "Your API key and all other script data (settings, history log) are stored **locally** in your browser's userscript storage. They are **never** transmitted anywhere except to the official Torn API when fetching data.",
-            "v3.1.8 (Compatibility): Added support for Torn PDA mobile app by dynamically loading Chart.js when in the mobile environment.",
-            "v3.1.7 (Fixed): Implemented refined speed calculation to prevent initial high-speed spike when loading the page mid-race. Speed now starts at 0 and calculates correctly after the first observed progress change.",
-            "v3.1.6 (Refined): Applied stronger, configurable smoothing to speed calculations *only* when progress changes, to reduce jumping while keeping the fix for the zero-speed drop. API key is password field. Animation uses capped time delta.",
-            "Since version 3.1.0, the API key is stored separately from other settings, meaning it should **not** be cleared when the script updates or if you use the 'Clear Script Data' button.",
-            "Use the 'Clear API Key' button specifically to remove the key.",
-            "The History Panel relies on checking your displayed Racing Skill/Class periodically. It fetches points via the API if a key is provided. Enable/disable in Settings. (v3.1.5: Fixed change calculation).",
-            "The Stats Panel requires an API key to fetch historical race data and track/car information. Enable/disable in Settings.",
-            "Race results export (💾 button) appears when the race finishes. Added CSV and Plain Text options.",
-            "Chart rendering uses the Chart.js library.",
-            "Telemetry display options (Speed, Accel, Progress) are now toggles in Settings."
+            "v3.2.1 (PDA Auto-Config): The script now automatically configures the API key for Torn PDA users on first run, providing a seamless setup.",
+            "v3.2.0 (PDA/UI Fix): Added support for Torn PDA's automatic API key (`###PDA-APIKEY###`) and fixed a styling issue with the ToS table in settings.",
+            "v3.1.9 (Compliance): Added Torn API ToS compliance information to the settings panel, clearly stating how the API key and fetched data are used and stored.",
+            "The API key is stored separately from other settings and is not cleared by the 'Clear Script Data' button.",
+            "The History and Stats Panels require an API key to fetch data.",
         ]
     };
 
@@ -52,25 +47,14 @@
     // Function to load Chart.js in PDA environment
     async function loadChartJsInPDA() {
         try {
-            // Make sure the platform is ready
             if (typeof __PDA_platformReadyPromise !== 'undefined') {
                 await __PDA_platformReadyPromise;
             }
-            
-            // Use PDA's HTTP GET to fetch Chart.js
             const chartJsUrl = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js';
-            const response = await window.flutter_inappwebview.callHandler(
-                "PDA_httpGet", 
-                chartJsUrl, 
-                {}
-            );
-            
-            // If we got a valid response, evaluate the code
+            const response = await window.flutter_inappwebview.callHandler("PDA_httpGet", chartJsUrl, {});
+
             if (response && response.status === 200 && response.responseText) {
-                await window.flutter_inappwebview.callHandler(
-                    "PDA_evaluateJavascript", 
-                    response.responseText
-                );
+                await window.flutter_inappwebview.callHandler("PDA_evaluateJavascript", response.responseText);
                 console.log("Torn Racing Telemetry: Successfully loaded Chart.js in PDA environment");
                 return true;
             } else {
@@ -321,6 +305,15 @@
         .settings-item select, .settings-item input[type=number], .settings-item input[type=text], .settings-item input[type=password] { padding: 8px; background: var(--background-light); border: 1px solid var(--border-color); border-radius: 4px; color: var(--text-color); width: 100%; box-sizing: border-box; }
         .settings-item input[type=password] { font-family: monospace; }
         .toggle-container { padding: 0; display: flex; align-items: center; justify-content: space-between; background: none; border: none; } .toggle-container label:first-child { margin-bottom: 0; } .settings-buttons { display: flex; justify-content: space-between; margin-top: 25px; padding-top: 15px; border-top: 1px solid var(--border-color); gap: 10px; flex-wrap: wrap; } .settings-btn { padding: 10px 15px; border-radius: 4px; border: none; cursor: pointer; background: var(--background-light); color: var(--text-color); transition: all 0.2s ease; flex-grow: 1; } .settings-btn:hover { background: var(--accent-color); color: var(--background-dark); } .settings-btn.primary { background: var(--primary-color); color: white; } .settings-btn.primary:hover { background: #388E3C; } .settings-btn.danger { background-color: var(--danger-color); color: white; } .settings-btn.danger:hover { background-color: var(--danger-hover-color); } .settings-data-buttons { display: flex; gap: 10px; width: 100%; margin-top: 10px; } .switch { position: relative; display: inline-block; width: 45px; height: 24px; flex-shrink: 0;} .switch input { opacity: 0; width: 0; height: 0; } .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #4d4d4d; transition: .3s; border-radius: 12px; } .slider:before { position: absolute; content: ""; height: 20px; width: 20px; left: 3px; bottom: 2px; background-color: #f4f4f4; transition: .3s; border-radius: 50%; } input:checked + .slider { background-color: var(--primary-color); } input:checked + .slider:before { transform: translateX(21px); }
+        .api-tos-container { margin-top: 10px; margin-bottom: 15px; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 4px; font-size: 0.85em; color: #ccc; line-height: 1.4; border: 1px solid var(--border-color); }
+        .api-tos-container p { margin: 0 0 8px 0; }
+        .api-tos-container details { margin-top: 10px; }
+        .api-tos-container summary { cursor: pointer; font-weight: bold; color: var(--text-color); }
+        .api-tos-container table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 0.95em; }
+        .api-tos-container th, .api-tos-container td { border: 1px solid var(--border-color); padding: 5px; text-align: left; vertical-align: top; }
+        .api-tos-container th { background-color: var(--table-header-bg); }
+        .api-tos-container td { color: var(--text-color); }
+        .api-tos-container code { background: var(--background-light); padding: 2px 4px; border-radius: 3px; font-family: monospace; }
         .color-1 { background-color: #DC143C; } .color-2 { background-color: #4682B4; } .color-3 { background-color: #32CD32; } .color-4 { background-color: #FFD700; } .color-5 { background-color: #FF8C00; } .color-6 { background-color: #9932CC; } .color-7 { background-color: #00CED1; } .color-8 { background-color: #FF1493; } .color-9 { background-color: #8B4513; } .color-10 { background-color: #7FFF00; } .color-11 { background-color: #00FA9A; } .color-12 { background-color: #D2691E; } .color-13 { background-color: #6495ED; } .color-14 { background-color: #F08080; } .color-15 { background-color: #20B2AA; } .color-16 { background-color: #B0C4DE; } .color-17 { background-color: #DA70D6; } .color-18 { background-color: #FF6347; } .color-19 { background-color: #40E0D0; } .color-20 { background-color: #C71585; } .color-21 { background-color: #6A5ACD; } .color-22 { background-color: #FA8072; } .color-default { background-color: #666; }
         @media (max-width: 768px) { .custom-driver-item { padding: 5px; } .driver-info-row { margin-bottom: 4px; } .driver-name { min-width: 80px; } .driver-telemetry-display { font-size: 0.8em; min-width: 60px; margin-left: 5px; padding: 1px 4px;} .driver-details { font-size: 0.85em; } #custom-driver-list-container { max-height: 350px; } .telemetry-download-button, .telemetry-info-button, .telemetry-history-button, .telemetry-stats-button, .telemetry-settings-button { font-size: 12px; padding: 5px 10px; } .settings-popup-content, .stats-panel-content, .history-panel-content, .info-panel-content, .download-popup-content { width: 95%; padding: 15px; } .settings-title, .stats-title, .history-title, .info-title, .download-title { font-size: 18px; } .settings-btn { padding: 8px 12px; font-size: 14px; } .custom-driver-item.details-visible .driver-details { max-height: 320px; } .stats-content table { font-size: 0.9em; } .stats-content th, .stats-content td { padding: 4px 6px; } .history-content table { font-size: 0.9em; } .history-content th, .history-content td { padding: 4px 6px; } }
         @media (max-width: 480px) { .driver-name { min-width: 60px; } .driver-telemetry-display { min-width: 55px; } .stats-content table { font-size: 0.85em; } .stats-content th, .stats-content td { padding: 3px 4px; } .history-content table { font-size: 0.85em; } .history-content th, .history-content td { padding: 3px 4px; } .settings-buttons { flex-direction: column; } .settings-data-buttons { flex-direction: column; } }
@@ -342,6 +335,12 @@
             } catch (e) {
                 return 'N/A';
             }
+        },
+        isApiKeyAvailable() {
+            const apiKey = Config.get('apiKey');
+            if (!apiKey) return false;
+            if (apiKey.trim() !== '###PDA-APIKEY###') return true;
+            return isPDA;
         },
         parseTime(timeString) { if (!timeString?.includes(':')) return 0; const parts = timeString.split(':'); if (parts.length === 2) { return (parseInt(parts[0], 10) || 0) * 60 + (parseFloat(parts[1]) || 0); } return 0; },
         parseProgress(text) { const match = text?.match(/(\d+\.?\d*)%/); return match ? parseFloat(match[1]) : 0; },
@@ -580,7 +579,33 @@
                     <div class="settings-item"> <label for="lapEstimateSmoothingFactor">Lap Est. Smoothing (0.01-1.0)</label> <input type="number" id="lapEstimateSmoothingFactor" min="0.01" max="1.0" step="0.01"> </div>
                     <hr style="border: none; border-top: 1px solid var(--border-color); margin: 20px 0;">
                     <div class="settings-item"> <div class="toggle-container"> <label for="fetchApiStatsOnClick">Load Driver API Stats on Click</label> <label class="switch"> <input type="checkbox" id="fetchApiStatsOnClick"> <span class="slider"></span> </label> </div> <small style="color: #aaa; margin-top: 5px;">(Requires API key)</small> </div>
-                    <div class="settings-item"> <label for="apiKey">Torn API Key (Limited Access Recommended)</label> <input type="password" id="apiKey" placeholder="Enter API Key"> </div>
+                    <div class="api-tos-container">
+                        <p><strong>API Key Usage (ToS):</strong> This script stores your key and data locally in your browser only. It is never shared. Please expand the details below for full compliance information.</p>
+                        <details>
+                            <summary>View API Usage Details (Torn ToS)</summary>
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Data Storage</th>
+                                        <th>Data Sharing</th>
+                                        <th>Purpose of Use</th>
+                                        <th>Key Storage & Sharing</th>
+                                        <th>Key Access Level</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td>Only locally</td>
+                                        <td>Nobody</td>
+                                        <td>Non-malicious statistical analysis</td>
+                                        <td>Stored locally / Not shared</td>
+                                        <td>Custom selections: <code>user (personalstats, races)</code>, <code>racing (tracks, cars, records)</code>. A 'Limited Access' key is sufficient.</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </details>
+                    </div>
+                    <div class="settings-item"> <label for="apiKey">Torn API Key (Limited Access Recommended)</label> <input type="password" id="apiKey" placeholder="Enter API Key or use '###PDA-APIKEY###' in Torn PDA"> </div>
                     <div class="settings-item"> <label for="historicalRaceLimit">Advanced Stats: Races to Analyze</label> <input type="number" id="historicalRaceLimit" min="10" max="1000" step="10"> </div>
                     <hr style="border: none; border-top: 1px solid var(--border-color); margin: 20px 0;">
                     <div class="settings-item"> <label for="historyCheckInterval">History: Check Interval (ms)</label> <input type="number" id="historyCheckInterval" min="5000" max="60000" step="1000"> </div>
@@ -610,12 +635,22 @@
             content.querySelector('#showLapEstimate').checked = Config.get('showLapEstimate');
             content.querySelector('#lapEstimateSmoothingFactor').value = Config.get('lapEstimateSmoothingFactor');
             content.querySelector('#fetchApiStatsOnClick').checked = Config.get('fetchApiStatsOnClick');
-            content.querySelector('#apiKey').value = Config.get('apiKey');
             content.querySelector('#historicalRaceLimit').value = Config.get('historicalRaceLimit');
             content.querySelector('#historyCheckInterval').value = Config.get('historyCheckInterval');
             content.querySelector('#historyLogLimit').value = Config.get('historyLogLimit');
             content.querySelector('#hideOriginalList').checked = Config.get('hideOriginalList');
             content.querySelector('.toggle-telemetry-btn').textContent = Config.get('telemetryVisible') ? 'Hide Telemetry' : 'Show Telemetry';
+
+            const apiKeyInput = content.querySelector('#apiKey');
+            apiKeyInput.value = Config.get('apiKey');
+            if (isPDA && apiKeyInput.value.trim() === '###PDA-APIKEY###') {
+                apiKeyInput.disabled = true;
+                const pdaNote = document.createElement('small');
+                pdaNote.style.cssText = 'color: var(--api-info-color); margin-top: 5px; display: block;';
+                pdaNote.textContent = 'Using Torn PDA managed API key. To change, edit in Torn PDA settings.';
+                apiKeyInput.parentNode.insertBefore(pdaNote, apiKeyInput.nextSibling);
+            }
+
 
             const closePopup = () => { popup.remove(); State.settingsPopupInstance = null; };
             content.querySelector('.settings-close').addEventListener('click', closePopup);
@@ -645,8 +680,8 @@
                 Config.set('maxAnimationDurationMs', animDuration);
                 Config.set('showLapEstimate', content.querySelector('#showLapEstimate').checked);
                 Config.set('fetchApiStatsOnClick', content.querySelector('#fetchApiStatsOnClick').checked);
-                const apiKeyInput = content.querySelector('#apiKey').value.trim();
-                if (apiKeyInput.length > 0 && apiKeyInput.length < 16) { Utils.showNotification('API Key seems too short.', 'error'); } else { Config.set('apiKey', apiKeyInput); }
+                const apiKeyInputFromUser = content.querySelector('#apiKey').value.trim();
+                if (apiKeyInputFromUser.length > 0 && apiKeyInputFromUser.length < 16 && apiKeyInputFromUser !== '###PDA-APIKEY###') { Utils.showNotification('API Key seems too short.', 'error'); } else { Config.set('apiKey', apiKeyInputFromUser); }
                 let lapSmoothFactor = parseFloat(content.querySelector('#lapEstimateSmoothingFactor').value);
                 if (isNaN(lapSmoothFactor) || lapSmoothFactor < 0.01 || lapSmoothFactor > 1.0) { lapSmoothFactor = Config.defaults.lapEstimateSmoothingFactor; content.querySelector('#lapEstimateSmoothingFactor').value = lapSmoothFactor; Utils.showNotification('Invalid Lap Est. Smoothing Factor, reset to default.', 'error'); }
                 Config.set('lapEstimateSmoothingFactor', lapSmoothFactor);
@@ -722,8 +757,8 @@
             let topCarsData = null;
 
             try {
+                if (!Utils.isApiKeyAvailable()) throw new Error("API Key not configured in Settings.");
                 const apiKey = Config.get('apiKey');
-                if (!apiKey) throw new Error("API Key not configured in Settings.");
                 if (!State.userId) throw new Error("User ID not found.");
 
                 if (!State.trackNameMap) {
@@ -1284,18 +1319,36 @@
     const APIManager = {
         isFetching: new Set(),
         async fetchWithAuthHeader(url, apiKey, options = {}) { if (!apiKey) throw new Error("API Key is required."); const response = await fetch(url, { ...options, headers: { 'Accept': 'application/json', 'Authorization': 'ApiKey ' + apiKey, ...(options.headers || {}) } }); if (!response.ok) { let errorMsg = `API Error (${response.status}): ${response.statusText}`; try { const errorData = await response.json(); if (errorData.error?.error) { errorMsg = `API Error: ${errorData.error.error} (Code ${errorData.error.code})`; } } catch (e) {} const error = new Error(errorMsg); error.statusCode = response.status; throw error; } const data = await response.json(); if (data.error) { throw new Error(`API Error: ${data.error.error} (Code ${data.error.code})`); } return data; },
-        async fetchAndDisplayRacingStats(driverItem, userId) { const detailsDiv = driverItem.querySelector('.driver-details'); const statsContainer = detailsDiv?.querySelector('.api-stats-container'); if (!statsContainer || !userId || this.isFetching.has(userId)) return; const apiKey = Config.get('apiKey'); if (!apiKey) { statsContainer.classList.add('no-key'); statsContainer.querySelector('.api-stat-error-msg').textContent = 'API key not configured in settings.'; statsContainer.querySelectorAll('.api-stat').forEach(span => span.textContent = 'N/A'); driverItem.dataset.statsLoaded = 'true'; return; } this.isFetching.add(userId); statsContainer.classList.remove('error', 'loaded', 'no-key'); statsContainer.classList.add('loading'); statsContainer.querySelector('.api-stat-error-msg').textContent = ''; statsContainer.querySelectorAll('.api-stat').forEach(span => span.textContent = '...'); const apiUrl = `https://api.torn.com/v2/user?selections=personalstats&id=${userId}&cat=racing&key=${apiKey}`; try { const response = await fetch(apiUrl); if (!response.ok) { let errorMsg = `HTTP error ${response.status}`; try { const errorData = await response.json(); if (errorData.error?.error) errorMsg = `API Error: ${errorData.error.error} (Code ${errorData.error.code})`; } catch (e) {} throw new Error(errorMsg); } const data = await response.json(); if (data.error) throw new Error(`API Error: ${data.error.error} (Code ${data.error.code})`); const racingStats = data?.personalstats?.racing; if (racingStats && typeof racingStats === 'object') { statsContainer.querySelector('.stat-skill').textContent = racingStats.skill?.toLocaleString() ?? 'N/A'; statsContainer.querySelector('.stat-points').textContent = racingStats.points?.toLocaleString() ?? 'N/A'; const racesEntered = racingStats.races?.entered; const racesWon = racingStats.races?.won; statsContainer.querySelector('.stat-races-entered').textContent = racesEntered?.toLocaleString() ?? 'N/A'; statsContainer.querySelector('.stat-races-won').textContent = racesWon?.toLocaleString() ?? 'N/A'; const winRate = (racesEntered && racesWon > 0) ? ((racesWon / racesEntered) * 100).toFixed(1) + '%' : (racesEntered > 0 ? '0.0%' : 'N/A'); statsContainer.querySelector('.stat-win-rate').textContent = winRate; statsContainer.classList.add('loaded'); driverItem.dataset.statsLoaded = 'true'; } else { statsContainer.classList.add('error'); statsContainer.querySelector('.api-stat-error-msg').textContent = 'No racing stats found (or permission denied).'; statsContainer.querySelectorAll('.api-stat').forEach(span => span.textContent = 'N/A'); driverItem.dataset.statsLoaded = 'true'; } } catch (error) { statsContainer.classList.add('error'); statsContainer.querySelector('.api-stat-error-msg').textContent = `Error: ${error.message}`; statsContainer.querySelectorAll('.api-stat').forEach(span => span.textContent = '-'); delete driverItem.dataset.statsLoaded; } finally { statsContainer.classList.remove('loading'); this.isFetching.delete(userId); } },
+        async fetchAndDisplayRacingStats(driverItem, userId) {
+            const detailsDiv = driverItem.querySelector('.driver-details');
+            const statsContainer = detailsDiv?.querySelector('.api-stats-container');
+            if (!statsContainer || !userId || this.isFetching.has(userId)) return;
+
+            if (!Utils.isApiKeyAvailable()) {
+                statsContainer.classList.add('no-key');
+                statsContainer.querySelector('.api-stat-error-msg').textContent = 'API key not configured in settings.';
+                statsContainer.querySelectorAll('.api-stat').forEach(span => span.textContent = 'N/A');
+                driverItem.dataset.statsLoaded = 'true';
+                return;
+            }
+
+            const apiKey = Config.get('apiKey');
+            this.isFetching.add(userId);
+            statsContainer.classList.remove('error', 'loaded', 'no-key');
+            statsContainer.classList.add('loading');
+            statsContainer.querySelector('.api-stat-error-msg').textContent = '';
+            statsContainer.querySelectorAll('.api-stat').forEach(span => span.textContent = '...');
+            const apiUrl = `https://api.torn.com/v2/user?selections=personalstats&id=${userId}&cat=racing&key=${apiKey}`;
+            try { const response = await fetch(apiUrl); if (!response.ok) { let errorMsg = `HTTP error ${response.status}`; try { const errorData = await response.json(); if (errorData.error?.error) errorMsg = `API Error: ${errorData.error.error} (Code ${errorData.error.code})`; } catch (e) {} throw new Error(errorMsg); } const data = await response.json(); if (data.error) throw new Error(`API Error: ${data.error.error} (Code ${data.error.code})`); const racingStats = data?.personalstats?.racing; if (racingStats && typeof racingStats === 'object') { statsContainer.querySelector('.stat-skill').textContent = racingStats.skill?.toLocaleString() ?? 'N/A'; statsContainer.querySelector('.stat-points').textContent = racingStats.points?.toLocaleString() ?? 'N/A'; const racesEntered = racingStats.races?.entered; const racesWon = racingStats.races?.won; statsContainer.querySelector('.stat-races-entered').textContent = racesEntered?.toLocaleString() ?? 'N/A'; statsContainer.querySelector('.stat-races-won').textContent = racesWon?.toLocaleString() ?? 'N/A'; const winRate = (racesEntered && racesWon > 0) ? ((racesWon / racesEntered) * 100).toFixed(1) + '%' : (racesEntered > 0 ? '0.0%' : 'N/A'); statsContainer.querySelector('.stat-win-rate').textContent = winRate; statsContainer.classList.add('loaded'); driverItem.dataset.statsLoaded = 'true'; } else { statsContainer.classList.add('error'); statsContainer.querySelector('.api-stat-error-msg').textContent = 'No racing stats found (or permission denied).'; statsContainer.querySelectorAll('.api-stat').forEach(span => span.textContent = 'N/A'); driverItem.dataset.statsLoaded = 'true'; } } catch (error) { statsContainer.classList.add('error'); statsContainer.querySelector('.api-stat-error-msg').textContent = `Error: ${error.message}`; statsContainer.querySelectorAll('.api-stat').forEach(span => span.textContent = '-'); delete driverItem.dataset.statsLoaded; } finally { statsContainer.classList.remove('loading'); this.isFetching.delete(userId); }
+        },
         async fetchUserRacingPoints(apiKey, userId) {
-            if (!apiKey) throw new Error("API Key required.");
-            if (!userId) throw new Error("User ID required.");
+            if (!apiKey || !userId) return null;
             if (this.isFetching.has(`points-${userId}`)) return null;
 
             this.isFetching.add(`points-${userId}`);
             const apiUrl = `https://api.torn.com/v2/user?selections=personalstats&id=${userId}&cat=racing&key=${apiKey}`;
-            let response = null;
             try {
-                response = await fetch(apiUrl);
-
+                const response = await fetch(apiUrl);
                 if (!response.ok) {
                     let errorMsg = `HTTP error ${response.status}`;
                     let errorData = null;
@@ -1303,13 +1356,10 @@
                     if (errorData && errorData.error?.error) { errorMsg = `API Error: ${errorData.error.error} (Code ${errorData.error.code})`; }
                     throw new Error(errorMsg);
                 }
-
                 const data = await response.json();
                 if (data.error) { throw new Error(`API Error: ${data.error.error} (Code ${data.error.code})`); }
-
                 const points = data?.personalstats?.racing?.points;
                 return typeof points === 'number' ? points : null;
-
             } catch (error) {
                 return null;
             } finally {
@@ -1480,7 +1530,7 @@
                     let trackName = State.trackInfo.name;
 
                     if (!trackId || trackNameFromTitle !== trackName) {
-                        if (!State.trackNameMap) {
+                        if (!State.trackNameMap && Utils.isApiKeyAvailable()) {
                             try {
                                 const apiKey = Config.get('apiKey');
                                 if (apiKey) { State.trackNameMap = await APIManager.fetchTrackData(apiKey); }
@@ -1796,10 +1846,10 @@
 
             const { skill: currentSkill, class: currentClass } = this.getCurrentSkillAndClass();
             let currentPoints = State.lastKnownPoints;
-            const apiKey = Config.get('apiKey');
 
-            if (apiKey && !State.isFetchingPoints) {
+            if (Utils.isApiKeyAvailable() && !State.isFetchingPoints) {
                 State.isFetchingPoints = true;
+                const apiKey = Config.get('apiKey');
                 try {
                      const fetchedPoints = await APIManager.fetchUserRacingPoints(apiKey, State.userId);
                      if (fetchedPoints !== null) currentPoints = fetchedPoints;
@@ -1870,6 +1920,12 @@
             State.userId = userData.id?.toString();
             if (!State.userId) throw new Error("User ID not found.");
 
+            // Auto-configure PDA key if running in PDA and no key is set
+            if (isPDA && Config.get('apiKey') === '') {
+                Config.set('apiKey', '###PDA-APIKEY###');
+                Utils.showNotification('Torn PDA API key automatically configured.', 'success');
+            }
+
             HistoryManager.loadLog();
 
             State.originalLeaderboard = document.getElementById('leaderBoard');
@@ -1905,21 +1961,16 @@
             HistoryManager.startCheckInterval();
 
             if (State.observers.length === 0 && document.body.contains(State.originalLeaderboard)) {
-                // Add debounce to leaderboard updates
-                let updateTimeout = null;
                 const observer = new MutationObserver(() => {
-                    if (updateTimeout) clearTimeout(updateTimeout);
-                    updateTimeout = setTimeout(() => {
-                        window.requestAnimationFrame(async () => {
-                            if (State.isUpdating || !State.isInitialized) return;
-                            try {
-                                await RaceManager.updateTrackAndClassInfo();
-                                RaceManager.stableUpdateCustomList();
-                            } catch (e) {
-                                console.error("Telemetry Script: Error during leaderboard update:", e);
-                            }
-                        });
-                    }, 100); // 100ms debounce
+                    window.requestAnimationFrame(async () => {
+                        if (State.isUpdating || !State.isInitialized) return;
+                         try {
+                            await RaceManager.updateTrackAndClassInfo();
+                            RaceManager.stableUpdateCustomList();
+                        } catch (e) {
+                             console.error("Telemetry Script: Error during leaderboard update:", e);
+                        }
+                    });
                 });
                 const observerConfig = { childList: true, subtree: true, attributes: true, characterData: true };
                 observer.observe(State.originalLeaderboard, observerConfig);
