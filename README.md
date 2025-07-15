@@ -32,7 +32,7 @@
 
 <h1>🏎️ Torn Racing Telemetry</h1>
 <blockquote>
-    Enhance your Torn racing experience with a professional UI, highly accurate real-time telemetry, detailed stats analysis with charts, and personal history tracking.
+    Enhance your Torn.com racing experience with a professional UI, highly accurate real-time telemetry, detailed stats analysis with charts, and personal history tracking.
 </blockquote>
 <hr>
 
