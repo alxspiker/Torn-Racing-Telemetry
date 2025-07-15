@@ -15,6 +15,7 @@
         th { background-color: #f2f2f2; }
         pre { background-color: #f9f9f9; border: 1px solid #ddd; padding: 10px; border-radius: 4px; white-space: pre-wrap; word-wrap: break-word; }
         code { font-family: monospace; background: #eee; padding: 2px 4px; border-radius: 3px; }
+        img { max-width: 100%; height: auto; border-radius: 5px; display: block; margin: 15px auto; border: 2px solid #ddd; }
         .center { text-align: center; }
         .feature-table td { vertical-align: top; }
         .success-text { color: #4CAF50; font-weight: bold; }
@@ -45,15 +46,14 @@
     </ul>
 </div>
 
-
 <h2>📋 Table of Contents</h2>
 <ul>
     <li><a href="#overview">Overview</a></li>
     <li><a href="#key-features">Key Features</a></li>
-    <li><a href="#telemetry-display">Telemetry Display Explained</a></li>
+    <li><a href="#enhanced-driver-list">Enhanced Driver List & Telemetry</a></li>
     <li><a href="#advanced-stats-panel">Advanced Stats Panel</a></li>
     <li><a href="#history-panel">History Panel</a></li>
-    <li><a href="#interface-controls">Interface Controls</a></li>
+    <li><a href="#settings-panel">Settings & Customization</a></li>
     <li><a href="#api-tos">API Usage & Data Privacy (ToS)</a></li>
     <li><a href="#installation">Installation</a></li>
     <li><a href="#faq">FAQ</a></li>
@@ -111,53 +111,23 @@
     </tbody>
 </table>
 
-<h2 id="telemetry-display">Telemetry Display Explained</h2>
-<p>The script adds a telemetry display next to each driver in the enhanced list. Thanks to the rebuilt telemetry engine, these values are smoother and more accurate than ever, gracefully handling gaps in game data.</p>
-<table>
-    <thead>
-        <tr><th>Pos</th><th>Driver</th><th>Telemetry</th><th>Progress</th></tr>
-    </thead>
-    <tbody>
-        <tr>
-            <td>1</td>
-            <td>JohnRacer [12345]</td>
-            <td><span class="success-text">95 mph | 0.5 g</span> <span class="neutral-text">(~1:15)</span></td>
-            <td>84%</td>
-        </tr>
-        <tr>
-            <td>2</td>
-            <td>SpeedDemon [67890] (You)</td>
-            <td><span class="danger-text">88 mph | -0.8 g</span> <span class="neutral-text">(~1:18)</span></td>
-            <td>82%</td>
-        </tr>
-         <tr>
-            <td>3</td>
-            <td>RacerKing [44556]</td>
-            <td>🏁 1:51.24 (~85 mph)</td>
-            <td>Finished</td>
-        </tr>
-         <tr>
-            <td>4</td>
-            <td>CrashTest [77889]</td>
-            <td>💥 CRASHED</td>
-            <td>Crashed</td>
-        </tr>
-    </tbody>
-</table>
-
-<p><strong>Understanding the Display:</strong></p>
+<h2 id="enhanced-driver-list">Enhanced Driver List & Telemetry</h2>
+<p>When enabled (default), the script hides Torn's default leaderboard and presents its own dynamic list, complete with telemetry data. Clicking on any driver expands their entry to show a detailed stats panel.</p>
+<a href="https://i.imgur.com/aaDsapG.jpeg" target="_blank" rel="noopener noreferrer"><img src="https://i.imgur.com/aaDsapG.jpeg" alt="Enhanced UI with Telemetry"></a>
+<a href="https://i.imgur.com/deg0hK0.jpeg" target="_blank" rel="noopener noreferrer"><img src="https://i.imgur.com/deg0hK0.jpeg" alt="Expanded Driver Details"></a>
+<p><strong>Understanding the Telemetry:</strong></p>
 <ul>
     <li><strong>Speed:</strong> Current calculated speed in your chosen unit (mph or km/h).</li>
     <li><strong>Acceleration:</strong> Calculated g-forces. Positive (<span class="success-text">green</span>) for acceleration, negative (<span class="danger-text">red</span>) for braking/deceleration, <span class="neutral-text">grey</span> for neutral speed.</li>
     <li><strong>Est. Lap Time:</strong> (Optional) A stable, predictive time remaining for the current lap, shown in parentheses <span class="neutral-text">(~X:XX)</span>.</li>
-    <li><strong>Finished/Crashed Drivers:</strong> Clearly marked with status icons and text.</li>
+    <li><strong>Status Icons:</strong> 🥇 🥈 🥉 for podium, 🏁 for finished, and 💥 for crashed.</li>
 </ul>
 
-
 <h2 id="advanced-stats-panel">Advanced Stats Panel</h2>
-<p>Accessible via the '📊 Stats' button <span class="api-required">(Requires API Key)</span>, this panel provides deep insights into your racing performance. It loads faster than ever thanks to intelligent data caching.</p>
+<p>Accessible via the '📊 Stats' button <span class="api-required">(Requires API Key)</span>, this panel provides deep insights into your racing performance based on your recent official race history. It loads faster than ever thanks to intelligent data caching.</p>
+<a href="https://i.imgur.com/ucVqpN3.jpeg" target="_blank" rel="noopener noreferrer"><img src="https://i.imgur.com/ucVqpN3.jpeg" alt="Advanced Stats Panel"></a>
 <ul>
-    <li><strong>Overall Performance Summary:</strong> Win rate, podium rate, crash rate, and more from your recent official races.</li>
+    <li><strong>Overall Performance Summary:</strong> Win rate, podium rate, crash rate, and more.</li>
     <li><strong>Performance by Track & Car:</strong> Tables and charts showing your stats for each track and car you've raced.</li>
     <li><strong>Current Track Analysis:</strong> View track records, analyze top-performing cars, and see stats for your currently selected car.</li>
 </ul>
@@ -171,18 +141,15 @@
     <li>Features an 'Export' button to download your entire progression history.</li>
 </ul>
 
-
-<h2 id="interface-controls">Interface Controls</h2>
-<p>The script adds a control bar above the driver list for easy access to all features:</p>
-<pre><code>┌─────────┐   ┌───────────┐   ┌─────────┐   ┌──────────┐   ┌──────────┐
-│ ℹ️ Info  │   │ 📜 History│   │ 📊 Stats│   │ 💾 Export│   │ ⚙ Settings│
-└─────────┘   └───────────┘   └─────────┘   └──────────┘   └──────────┘</code></pre>
+<h2 id="settings-panel">Settings & Customization</h2>
+<p>The '⚙ Settings' button opens a panel allowing full customization of the script's features.</p>
+<a href="https://i.imgur.com/llhZVjY.jpeg" target="_blank" rel="noopener noreferrer"><img src="https://i.imgur.com/llhZVjY.jpeg" alt="Settings Panel"></a>
 <ul>
-    <li><strong>ℹ️ Info:</strong> Opens a panel with script details, version, and notes.</li>
-    <li><strong>📜 History:</strong> (Visible if enabled) Opens the History Panel to view your skill/points progression.</li>
-    <li><strong>📊 Stats:</strong> (Visible if enabled) Opens the Advanced Stats Panel <span class="api-required">(Requires API Key)</span>.</li>
-    <li><strong>💾 Export:</strong> (Visible after race finish) Opens a dialog to export the final race results.</li>
-    <li><strong>⚙ Settings:</strong> Opens the Settings Panel to configure the script and your API key.</li>
+    <li>Toggling the History and Stats panels on or off.</li>
+    <li>Customizing the telemetry display (speed, acceleration, units, animations).</li>
+    <li>Managing your Torn API Key for advanced features.</li>
+    <li>Configuring data limits and check intervals for history logging and stats analysis.</li>
+    <li>Toggling the enhanced driver list.</li>
 </ul>
 
 <h2 id="api-tos">API Usage & Data Privacy (Terms of Service)</h2>
