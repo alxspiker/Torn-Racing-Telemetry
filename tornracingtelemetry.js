@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn Racing Telemetry
 // @namespace    https://www.torn.com/profiles.php?XID=2782979
-// @version      3.2.1
+// @version      3.4.1
 // @description  Enhanced Torn Racing UI: Telemetry, driver stats, advanced stats panel, history tracking, and race results export.
 // @match        https://www.torn.com/page.php?sid=racing*
 // @match        https://www.torn.com/loader.php?sid=racing*
@@ -15,25 +15,22 @@
 // @connect      api.torn.com
 // @license      MIT
 // @downloadURL https://update.greasyfork.org/scripts/522245/Torn%20Racing%20Telemetry.user.js
-// @updateURL https://update.greasyfork.org/scripts/522245/Torn%20Racing%20Telemetry.meta.js
+// @updateURL https://update.greasyfork.org/scripts/522245/Torn%20Racing%2-BETAelemetry.meta.js
 // ==/UserScript==
 
 (function() {
     'use strict';
 
     const ScriptInfo = {
-        version: '3.2.1',
+        version: '3.4.1',
         author: "TheProgrammer",
         contactId: "2782979",
         contactUrl: function() { return `https://www.torn.com/profiles.php?XID=${this.contactId}`; },
         description: "Provides enhanced telemetry, stats analysis, historical tracking, and race results export for Torn Racing.",
         notes: [
+            "v3.4.1: Implemented Race ID capture for unique race identification in logs and exports. Improved User ID detection for better script initialization.",
+            "v3.4.0: Major telemetry engine overhaul. Implemented advanced EMA smoothing for speed & acceleration, robust handling for data gaps to prevent artifacts, and a more predictive lap time estimation model for significantly improved accuracy and stability.",
             "Your API key and all other script data (settings, history log) are stored **locally** in your browser's userscript storage. They are **never** transmitted anywhere except to the official Torn API when fetching data.",
-            "v3.2.1 (PDA Auto-Config): The script now automatically configures the API key for Torn PDA users on first run, providing a seamless setup.",
-            "v3.2.0 (PDA/UI Fix): Added support for Torn PDA's automatic API key (`###PDA-APIKEY###`) and fixed a styling issue with the ToS table in settings.",
-            "v3.1.9 (Compliance): Added Torn API ToS compliance information to the settings panel, clearly stating how the API key and fetched data are used and stored.",
-            "The API key is stored separately from other settings and is not cleared by the 'Clear Script Data' button.",
-            "The History and Stats Panels require an API key to fetch data.",
         ]
     };
 
@@ -159,7 +156,7 @@
         customUIContainer: null, originalLeaderboard: null,
         settingsPopupInstance: null, advancedStatsPanelInstance: null, historyPanelInstance: null, infoPanelInstance: null, downloadPopupInstance: null,
         trackNameMap: null, carBaseStatsMap: null, currentRaceClass: null,
-        isInitialized: false, isRaceViewActive: false, raceFinished: false,
+        isInitialized: false, isRaceViewActive: false, raceFinished: false, currentRaceId: null,
         controlsContainer: null,
         lastKnownSkill: null, lastKnownClass: null, lastKnownPoints: null, historyLog: [], historyCheckIntervalId: null, isFetchingPoints: false,
         activeCharts: [],
@@ -185,6 +182,7 @@
             this.destroyActiveCharts();
             this.raceFinished = false;
             this.finalRaceData = [];
+            this.currentRaceId = null;
             UI.updateControlButtonsVisibility();
         },
         clearPopupsAndFullReset() {
@@ -211,6 +209,7 @@
             this.destroyActiveCharts();
             this.raceFinished = false;
             this.finalRaceData = [];
+            this.currentRaceId = null;
         },
         destroyActiveCharts() {
             this.activeCharts.forEach(chart => {
@@ -316,7 +315,7 @@
         .api-tos-container code { background: var(--background-light); padding: 2px 4px; border-radius: 3px; font-family: monospace; }
         .color-1 { background-color: #DC143C; } .color-2 { background-color: #4682B4; } .color-3 { background-color: #32CD32; } .color-4 { background-color: #FFD700; } .color-5 { background-color: #FF8C00; } .color-6 { background-color: #9932CC; } .color-7 { background-color: #00CED1; } .color-8 { background-color: #FF1493; } .color-9 { background-color: #8B4513; } .color-10 { background-color: #7FFF00; } .color-11 { background-color: #00FA9A; } .color-12 { background-color: #D2691E; } .color-13 { background-color: #6495ED; } .color-14 { background-color: #F08080; } .color-15 { background-color: #20B2AA; } .color-16 { background-color: #B0C4DE; } .color-17 { background-color: #DA70D6; } .color-18 { background-color: #FF6347; } .color-19 { background-color: #40E0D0; } .color-20 { background-color: #C71585; } .color-21 { background-color: #6A5ACD; } .color-22 { background-color: #FA8072; } .color-default { background-color: #666; }
         @media (max-width: 768px) { .custom-driver-item { padding: 5px; } .driver-info-row { margin-bottom: 4px; } .driver-name { min-width: 80px; } .driver-telemetry-display { font-size: 0.8em; min-width: 60px; margin-left: 5px; padding: 1px 4px;} .driver-details { font-size: 0.85em; } #custom-driver-list-container { max-height: 350px; } .telemetry-download-button, .telemetry-info-button, .telemetry-history-button, .telemetry-stats-button, .telemetry-settings-button { font-size: 12px; padding: 5px 10px; } .settings-popup-content, .stats-panel-content, .history-panel-content, .info-panel-content, .download-popup-content { width: 95%; padding: 15px; } .settings-title, .stats-title, .history-title, .info-title, .download-title { font-size: 18px; } .settings-btn { padding: 8px 12px; font-size: 14px; } .custom-driver-item.details-visible .driver-details { max-height: 320px; } .stats-content table { font-size: 0.9em; } .stats-content th, .stats-content td { padding: 4px 6px; } .history-content table { font-size: 0.9em; } .history-content th, .history-content td { padding: 4px 6px; } }
-        @media (max-width: 480px) { .driver-name { min-width: 60px; } .driver-telemetry-display { min-width: 55px; } .stats-content table { font-size: 0.85em; } .stats-content th, .stats-content td { padding: 3px 4px; } .history-content table { font-size: 0.85em; } .history-content th, .history-content td { padding: 3px 4px; } .settings-buttons { flex-direction: column; } .settings-data-buttons { flex-direction: column; } }
+        @media (max-width: 480px) { .driver-name { min-width: 60px; } .driver-telemetry-display { min-width: 55px; font-size: 0.75em; } .stats-content table { font-size: 0.85em; } .stats-content th, .stats-content td { padding: 3px 4px; } .history-content table { font-size: 0.85em; } .history-content th, .history-content td { padding: 3px 4px; } .settings-buttons { flex-direction: column; } .settings-data-buttons { flex-direction: column; } }
     `);
 
     const Utils = {
@@ -373,26 +372,23 @@
         easeInOutQuad(t) { return t < 0.5 ? 2*t*t : -1+(4-2*t)*t; },
         interpolateColor(color1, color2, factor) { const result = color1.map((c, i) => Math.round(c + factor * (color2[i] - c))); return `rgb(${result[0]}, ${result[1]}, ${result[2]})`; },
         getTelemetryColor(acceleration) { const grey = [136, 136, 136]; const green = [76, 175, 80]; const red = [244, 67, 54]; const defaultColor = getComputedStyle(document.documentElement).getPropertyValue('--telemetry-default-color').match(/\d+/g)?.map(Number) || grey; const accelColor = getComputedStyle(document.documentElement).getPropertyValue('--telemetry-accel-color').match(/\d+/g)?.map(Number) || green; const decelColor = getComputedStyle(document.documentElement).getPropertyValue('--telemetry-decel-color').match(/\d+/g)?.map(Number) || red; if (!Config.get('colorCode')) return `rgb(${defaultColor.join(', ')})`; const maxAcc = 1.0; let factor = Math.min(Math.abs(acceleration) / maxAcc, 1); factor = isNaN(factor) ? 0 : factor; if (acceleration > 0.05) return this.interpolateColor(defaultColor, accelColor, factor); if (acceleration < -0.05) return this.interpolateColor(defaultColor, decelColor, factor); return `rgb(${defaultColor.join(', ')})`; },
+        ema(current, prev, alpha) {
+            if (prev === null || typeof prev === 'undefined' || !isFinite(prev)) return current;
+            return alpha * current + (1 - alpha) * prev;
+        },
         calculateDriverMetrics(driverId, progressPercentage, timestamp) {
             const prev = State.previousMetrics[driverId] || {
-                progress: 0,
-                time: timestamp - Config.get('minUpdateInterval'),
-                lastProgressValueAtChange: 0,
-                lastProgressChangeTimestamp: timestamp - Config.get('minUpdateInterval'),
-                reportedSpeed: 0,
-                acceleration: 0,
-                lastDisplayedSpeed: 0,
-                lastDisplayedAcceleration: 0,
-                firstUpdate: true,
-                currentLap: 1,
-                progressInLap: 0,
-                rawLapEstimate: null,
-                smoothedLapEstimate: null,
-                statusClass: 'ready'
+                progress: 0, time: timestamp - Config.get('minUpdateInterval'),
+                lastProgressValueAtChange: 0, lastProgressChangeTimestamp: timestamp - Config.get('minUpdateInterval'),
+                reportedSpeed: 0, acceleration: 0, lastDisplayedSpeed: 0, lastDisplayedAcceleration: 0,
+                firstUpdate: true, currentLap: 1, progressInLap: 0,
+                rawLapEstimate: null, smoothedLapEstimate: null, statusClass: 'ready',
+                raceStartTime: timestamp, totalTimeElapsed: 0, totalDistanceTraveled: 0, wasStale: false
             };
 
             const minDt = Config.get('minUpdateInterval') / 1000;
-            let dt = (timestamp - prev.time) / 1000;
+            const dtSinceLastUpdate = (timestamp - prev.time) / 1000;
+            const staleThresholdMs = 1500;
 
             if (prev.firstUpdate) {
                 const totalLaps = State.trackInfo.laps || 1;
@@ -402,65 +398,66 @@
                 const progressInLap = percentPerLap > 0 ? Math.max(0, Math.min(100, ((progressPercentage - startPercentOfLap) / percentPerLap) * 100)) : 0;
 
                 State.previousMetrics[driverId] = {
-                    ...prev,
-                    progress: progressPercentage,
-                    time: timestamp,
-                    lastProgressValueAtChange: progressPercentage,
-                    lastProgressChangeTimestamp: timestamp,
-                    reportedSpeed: 0,
-                    acceleration: 0,
-                    lastDisplayedSpeed: 0,
-                    lastDisplayedAcceleration: 0,
-                    firstUpdate: false,
-                    currentLap: currentLap,
-                    progressInLap: progressInLap,
-                    rawLapEstimate: null,
-                    smoothedLapEstimate: null,
+                    ...prev, progress: progressPercentage, time: timestamp,
+                    lastProgressValueAtChange: progressPercentage, lastProgressChangeTimestamp: timestamp,
+                    reportedSpeed: 0, acceleration: 0, lastDisplayedSpeed: 0, lastDisplayedAcceleration: 0,
+                    firstUpdate: false, currentLap: currentLap, progressInLap: progressInLap,
+                    raceStartTime: timestamp, wasStale: false
                 };
-                return { speed: 0, acceleration: 0, timeDelta: dt * 1000, noUpdate: true };
+                return { speed: 0, acceleration: 0, timeDelta: dtSinceLastUpdate * 1000, noUpdate: true };
             }
 
-            if (dt < minDt) {
-                 return { speed: prev.reportedSpeed, acceleration: prev.acceleration, timeDelta: dt * 1000, noUpdate: true };
+            // REVISED: Stale data handling. If no update for a while, decay speed.
+            if (dtSinceLastUpdate * 1000 > staleThresholdMs) {
+                const decayFactor = 0.85;
+                const decayedSpeed = prev.reportedSpeed * decayFactor;
+                const gentleDeceleration = -0.5;
+                prev.time = timestamp;
+                prev.reportedSpeed = decayedSpeed;
+                prev.acceleration = this.ema(gentleDeceleration, prev.acceleration, 0.1);
+                prev.wasStale = true;
+                return { speed: prev.reportedSpeed, acceleration: prev.acceleration, timeDelta: dtSinceLastUpdate * 1000, noUpdate: false };
             }
 
-            const effectiveDt = Math.max(minDt, dt);
+            if (dtSinceLastUpdate < minDt) {
+                 return { speed: prev.reportedSpeed, acceleration: prev.acceleration, timeDelta: dtSinceLastUpdate * 1000, noUpdate: true };
+            }
 
             let currentSpeed = prev.reportedSpeed;
             let calculatedSpeedThisTick = false;
-
             const epsilon = 0.001;
             const progressChanged = Math.abs(progressPercentage - prev.lastProgressValueAtChange) > epsilon;
+            let distanceDelta = 0;
 
             if (progressChanged) {
                  const dtSinceChange = (timestamp - prev.lastProgressChangeTimestamp) / 1000;
                  const progressDeltaSinceChange = progressPercentage - prev.lastProgressValueAtChange;
 
                  if (dtSinceChange > 0 && progressDeltaSinceChange > 0) {
-                    const distanceDelta = State.trackInfo.total * (progressDeltaSinceChange / 100);
-                    const speedMph = (distanceDelta / dtSinceChange) * 3600;
-                    const smoothingFactor = Config.get('speedSmoothingFactor');
-                    currentSpeed = (prev.reportedSpeed * smoothingFactor + speedMph * (1.0 - smoothingFactor));
-                    calculatedSpeedThisTick = true;
+                    distanceDelta = State.trackInfo.total * (progressDeltaSinceChange / 100);
+                    const rawSpeedMph = (distanceDelta / dtSinceChange) * 3600;
 
+                    // REVISED: Use explicit EMA with faster catch-up after stale period
+                    let speedAlpha = 1.0 - Config.get('speedSmoothingFactor');
+                    if (prev.wasStale) speedAlpha = Math.min(0.9, speedAlpha * 2);
+                    currentSpeed = this.ema(rawSpeedMph, prev.reportedSpeed, speedAlpha);
+
+                    calculatedSpeedThisTick = true;
                     prev.lastProgressValueAtChange = progressPercentage;
                     prev.lastProgressChangeTimestamp = timestamp;
-                 } else if (progressDeltaSinceChange <= 0 && dtSinceChange > 0.1) {
-                    const decayFactor = Math.max(0.1, 1.0 - (dtSinceChange * 0.5));
-                    currentSpeed = prev.reportedSpeed * decayFactor;
-                    prev.lastProgressChangeTimestamp = timestamp;
-                    calculatedSpeedThisTick = true;
                  } else {
-                    currentSpeed = prev.reportedSpeed;
+                    currentSpeed = prev.reportedSpeed * Math.max(0.1, 1.0 - (dtSinceChange * 0.5));
                  }
-            } else {
-                 currentSpeed = prev.reportedSpeed;
             }
 
             currentSpeed = Math.max(0, currentSpeed);
-
             const speedDeltaMps = (currentSpeed - prev.reportedSpeed) * 0.44704;
-            const acceleration = (effectiveDt <= 0) ? 0 : (speedDeltaMps / effectiveDt) / 9.81;
+            const rawAcceleration = (dtSinceLastUpdate <= 0) ? 0 : (speedDeltaMps / dtSinceLastUpdate) / 9.81;
+
+            // REVISED: Dual-stage smoothing. Apply a separate, gentle EMA to acceleration.
+            const accelAlpha = 0.25; // More smoothing for acceleration
+            let smoothedAcceleration = this.ema(rawAcceleration, prev.acceleration, accelAlpha);
+            smoothedAcceleration = Math.max(-3.0, Math.min(3.0, smoothedAcceleration)); // Clamp to realistic values
 
             const totalLaps = State.trackInfo.laps || 1;
             const percentPerLap = 100 / totalLaps;
@@ -468,28 +465,54 @@
             const startPercentOfLap = (currentLap - 1) * percentPerLap;
             const progressInLap = percentPerLap > 0 ? Math.max(0, Math.min(100, ((progressPercentage - startPercentOfLap) / percentPerLap) * 100)) : 0;
 
+            const totalTimeElapsed = (timestamp - prev.raceStartTime) / 1000;
+            const totalDistanceTraveled = (prev.totalDistanceTraveled || 0) + distanceDelta;
+
             State.previousMetrics[driverId] = {
                  ...prev,
-                 progress: progressPercentage,
-                 time: timestamp,
-                 lastProgressValueAtChange: prev.lastProgressValueAtChange,
-                 lastProgressChangeTimestamp: prev.lastProgressChangeTimestamp,
-                 reportedSpeed: currentSpeed,
-                 acceleration: acceleration,
-                 lastDisplayedSpeed: currentSpeed,
-                 lastDisplayedAcceleration: acceleration,
-                 currentLap: currentLap,
-                 progressInLap: progressInLap
+                 progress: progressPercentage, time: timestamp,
+                 reportedSpeed: currentSpeed, acceleration: smoothedAcceleration,
+                 lastDisplayedSpeed: currentSpeed, lastDisplayedAcceleration: smoothedAcceleration,
+                 currentLap, progressInLap,
+                 totalTimeElapsed, totalDistanceTraveled,
+                 wasStale: false
             };
 
             return {
-                speed: currentSpeed,
-                acceleration: acceleration,
-                timeDelta: effectiveDt * 1000,
-                noUpdate: !calculatedSpeedThisTick
+                speed: currentSpeed, acceleration: smoothedAcceleration,
+                timeDelta: dtSinceLastUpdate * 1000, noUpdate: !calculatedSpeedThisTick
             };
         },
-        calculateSmoothedLapEstimate(driverId, metrics) { const driverState = State.previousMetrics[driverId]; if (!driverState || metrics.speed <= 1) { if (driverState) { driverState.rawLapEstimate = null; driverState.smoothedLapEstimate = null; } return null; } const lapLength = State.trackInfo.length || 0; if (lapLength <= 0) return null; const remainingProgressInLap = 100 - driverState.progressInLap; const remainingDistance = lapLength * (remainingProgressInLap / 100); const rawEstimate = (remainingDistance / metrics.speed) * 3600; driverState.rawLapEstimate = rawEstimate; const alpha = Config.get('lapEstimateSmoothingFactor'); let smoothedEstimate; if (driverState.smoothedLapEstimate === null || !isFinite(driverState.smoothedLapEstimate) || isNaN(driverState.smoothedLapEstimate)) { smoothedEstimate = rawEstimate; } else { smoothedEstimate = alpha * rawEstimate + (1 - alpha) * driverState.smoothedLapEstimate; } if (smoothedEstimate > 3600 || smoothedEstimate < 0) { smoothedEstimate = driverState.smoothedLapEstimate ?? rawEstimate; } driverState.smoothedLapEstimate = smoothedEstimate; return smoothedEstimate; },
+        calculateSmoothedLapEstimate(driverId, metrics) {
+            const driverState = State.previousMetrics[driverId];
+            if (!driverState || (driverState.totalTimeElapsed || 0) < 5) return null;
+
+            // REVISED: Use average race speed for a more stable prediction base
+            let baseSpeed = metrics.speed;
+            if (driverState.totalTimeElapsed > 0 && driverState.totalDistanceTraveled > 0) {
+                const avgRaceSpeed = (driverState.totalDistanceTraveled / driverState.totalTimeElapsed) * 3600;
+                if (avgRaceSpeed > 10) baseSpeed = avgRaceSpeed; // Use average if it's plausible
+            }
+            if (baseSpeed <= 1) return null;
+
+            const lapLength = State.trackInfo.length || 0;
+            if (lapLength <= 0) return null;
+
+            const remainingProgressInLap = 100 - driverState.progressInLap;
+            const remainingDistance = lapLength * (remainingProgressInLap / 100);
+            const rawEstimate = (remainingDistance / baseSpeed) * 3600;
+            driverState.rawLapEstimate = rawEstimate;
+
+            const alpha = Config.get('lapEstimateSmoothingFactor');
+            let smoothedEstimate = this.ema(rawEstimate, driverState.smoothedLapEstimate, alpha);
+
+            if (smoothedEstimate > 3600 || smoothedEstimate < 0 || !isFinite(smoothedEstimate)) {
+                smoothedEstimate = driverState.smoothedLapEstimate ?? rawEstimate;
+            }
+
+            driverState.smoothedLapEstimate = smoothedEstimate;
+            return smoothedEstimate;
+        },
         animateTelemetry(element, fromSpeed, toSpeed, fromAcc, toAcc, duration, displayMode, speedUnit, extraText) {
             let startTime = null;
             const easeFunction = this.easeInOutQuad;
@@ -1082,6 +1105,15 @@
                 }
             });
             actionsDiv.appendChild(clearButton);
+            const exportButton = document.createElement('button');
+            exportButton.textContent = 'Export History';
+            exportButton.addEventListener('click', () => {
+                const format = prompt('Export as (csv/json):') || 'csv';
+                let dataStr = format === 'json' ? JSON.stringify(HistoryManager.getLog(), null, 2) :
+                              'Timestamp,Skill,Class,Points\n' + HistoryManager.getLog().map(e => `${Utils.formatDate(e.timestamp, true)},${e.skill},${e.class},${e.points}`).join('\n');
+                DataExporter.downloadData(dataStr, format, `text/${format}`);
+            });
+            actionsDiv.appendChild(exportButton);
             content.appendChild(actionsDiv);
 
             const closePanel = () => { popup.remove(); State.historyPanelInstance = null; State.destroyActiveCharts(); };
@@ -1318,7 +1350,44 @@
 
     const APIManager = {
         isFetching: new Set(),
-        async fetchWithAuthHeader(url, apiKey, options = {}) { if (!apiKey) throw new Error("API Key is required."); const response = await fetch(url, { ...options, headers: { 'Accept': 'application/json', 'Authorization': 'ApiKey ' + apiKey, ...(options.headers || {}) } }); if (!response.ok) { let errorMsg = `API Error (${response.status}): ${response.statusText}`; try { const errorData = await response.json(); if (errorData.error?.error) { errorMsg = `API Error: ${errorData.error.error} (Code ${errorData.error.code})`; } } catch (e) {} const error = new Error(errorMsg); error.statusCode = response.status; throw error; } const data = await response.json(); if (data.error) { throw new Error(`API Error: ${data.error.error} (Code ${data.error.code})`); } return data; },
+        async fetchWithAuthHeader(url, apiKey, options = {}, retries = 3, baseDelay = 1000) {
+            let delay = baseDelay;
+            for (let attempt = 0; attempt < retries; attempt++) {
+                try {
+                    const response = await fetch(url, { ...options, headers: { 'Accept': 'application/json', 'Authorization': 'ApiKey ' + apiKey, ...(options.headers || {}) } });
+                    if (!response.ok) {
+                        let errorMsg = `API Error (${response.status}): ${response.statusText}`;
+                        try {
+                            const errorData = await response.json();
+                            if (errorData.error?.error) {
+                                errorMsg = `API Error: ${errorData.error.error} (Code ${errorData.error.code})`;
+                            }
+                        } catch (e) {}
+                        const error = new Error(errorMsg);
+                        error.statusCode = response.status;
+                        throw error;
+                    }
+                    const data = await response.json();
+                    if (data.error) {
+                        if (data.error.code === 2 && attempt < retries - 1) {
+                            await new Promise(res => setTimeout(res, delay));
+                            delay *= 2;
+                            continue;
+                        }
+                        throw new Error(`API Error: ${data.error.error} (Code ${data.error.code})`);
+                    }
+                    return data;
+                } catch (error) {
+                    if (attempt < retries - 1 && (error.message.includes('Too many requests') || error.message.includes('Code 2') || error.statusCode === 429)) {
+                        await new Promise(res => setTimeout(res, delay));
+                        delay *= 2;
+                        continue;
+                    }
+                    throw error;
+                }
+            }
+            throw new Error('Max retries reached');
+        },
         async fetchAndDisplayRacingStats(driverItem, userId) {
             const detailsDiv = driverItem.querySelector('.driver-details');
             const statsContainer = detailsDiv?.querySelector('.api-stats-container');
@@ -1339,7 +1408,7 @@
             statsContainer.querySelector('.api-stat-error-msg').textContent = '';
             statsContainer.querySelectorAll('.api-stat').forEach(span => span.textContent = '...');
             const apiUrl = `https://api.torn.com/v2/user?selections=personalstats&id=${userId}&cat=racing&key=${apiKey}`;
-            try { const response = await fetch(apiUrl); if (!response.ok) { let errorMsg = `HTTP error ${response.status}`; try { const errorData = await response.json(); if (errorData.error?.error) errorMsg = `API Error: ${errorData.error.error} (Code ${errorData.error.code})`; } catch (e) {} throw new Error(errorMsg); } const data = await response.json(); if (data.error) throw new Error(`API Error: ${data.error.error} (Code ${data.error.code})`); const racingStats = data?.personalstats?.racing; if (racingStats && typeof racingStats === 'object') { statsContainer.querySelector('.stat-skill').textContent = racingStats.skill?.toLocaleString() ?? 'N/A'; statsContainer.querySelector('.stat-points').textContent = racingStats.points?.toLocaleString() ?? 'N/A'; const racesEntered = racingStats.races?.entered; const racesWon = racingStats.races?.won; statsContainer.querySelector('.stat-races-entered').textContent = racesEntered?.toLocaleString() ?? 'N/A'; statsContainer.querySelector('.stat-races-won').textContent = racesWon?.toLocaleString() ?? 'N/A'; const winRate = (racesEntered && racesWon > 0) ? ((racesWon / racesEntered) * 100).toFixed(1) + '%' : (racesEntered > 0 ? '0.0%' : 'N/A'); statsContainer.querySelector('.stat-win-rate').textContent = winRate; statsContainer.classList.add('loaded'); driverItem.dataset.statsLoaded = 'true'; } else { statsContainer.classList.add('error'); statsContainer.querySelector('.api-stat-error-msg').textContent = 'No racing stats found (or permission denied).'; statsContainer.querySelectorAll('.api-stat').forEach(span => span.textContent = 'N/A'); driverItem.dataset.statsLoaded = 'true'; } } catch (error) { statsContainer.classList.add('error'); statsContainer.querySelector('.api-stat-error-msg').textContent = `Error: ${error.message}`; statsContainer.querySelectorAll('.api-stat').forEach(span => span.textContent = '-'); delete driverItem.dataset.statsLoaded; } finally { statsContainer.classList.remove('loading'); this.isFetching.delete(userId); }
+            try { const response = await fetch(apiUrl); if (!response.ok) { let errorMsg = `HTTP error ${response.status}`; try { const errorData = await response.json(); if (errorData.error?.error) errorMsg = `API Error: ${errorData.error.error} (Code ${errorData.error.code})`; } catch (e) {} throw new Error(errorMsg); } const data = await response.json(); if (data.error) throw new Error(`API Error: ${data.error.error} (Code ${data.error.code})`); const racingStats = data?.personalstats?.racing; if (racingStats && typeof racingStats === 'object') { statsContainer.querySelector('.stat-skill').textContent = racingStats.skill?.toLocaleString() ?? 'N/A'; statsContainer.querySelector('.stat-points').textContent = racingStats.points?.toLocaleString() ?? 'N/A'; const racesEntered = racingStats.races?.entered; const racesWon = racingStats.races?.won; statsContainer.querySelector('.stat-races-entered').textContent = racesEntered?.toLocaleString() ?? 'N/A'; statsContainer.querySelector('.stat-races-won').textContent = racesWon?.toLocaleString() ?? 'N/A'; const winRate = (racesEntered && racesWon > 0) ? ((racesWon / racesEntered) * 100).toFixed(1) + '%' : (racesEntered > 0 ? '0.0%' : 'N/A'); statsContainer.querySelector('.stat-win-rate').textContent = winRate; statsContainer.classList.add('loaded'); driverItem.dataset.statsLoaded = 'true'; } else { statsContainer.classList.add('error'); statsContainer.querySelector('.api-stat-error-msg').textContent = 'No racing stats found (or permission denied).'; statsContainer.querySelectorAll('.api-stat').forEach(span => span.textContent = 'N/A'); driverItem.dataset.statsLoaded = 'true'; } } catch (error) { statsContainer.classList.add('error'); statsContainer.querySelector('.api-stat-error-msg').textContent = `Error: ${error.message}`; statsContainer.querySelectorAll('.api-stat').forEach(span => span.textContent = '-'); delete driverItem.dataset.statsLoaded; Utils.showNotification(error.message, 'error'); } finally { statsContainer.classList.remove('loading'); this.isFetching.delete(userId); }
         },
         async fetchUserRacingPoints(apiKey, userId) {
             if (!apiKey || !userId) return null;
@@ -1361,13 +1430,28 @@
                 const points = data?.personalstats?.racing?.points;
                 return typeof points === 'number' ? points : null;
             } catch (error) {
+                Utils.showNotification(error.message, 'error');
                 return null;
             } finally {
                 this.isFetching.delete(`points-${userId}`);
             }
         },
-        async fetchTrackData(apiKey) { const data = await this.fetchWithAuthHeader('https://api.torn.com/v2/racing/tracks', apiKey); const trackMap = {}; if (data && data.tracks) { data.tracks.forEach(track => { trackMap[track.id] = track.title; }); } return trackMap; },
-        async fetchCarBaseStats(apiKey) { const data = await this.fetchWithAuthHeader('https://api.torn.com/v2/racing/cars', apiKey); const carMap = {}; if (data && data.cars) { data.cars.forEach(car => { carMap[car.car_item_id] = car; }); } return carMap; },
+        async fetchTrackData(apiKey) {
+            const cached = GM_getValue('tornTrackCache', null);
+            if (cached && Date.now() - cached.timestamp < 86400000) return cached.data;
+            const data = await this.fetchWithAuthHeader('https://api.torn.com/v2/racing/tracks', apiKey);
+            const trackMap = data.tracks ? data.tracks.reduce((map, t) => { map[t.id] = t.title; return map; }, {}) : {};
+            GM_setValue('tornTrackCache', { data: trackMap, timestamp: Date.now() });
+            return trackMap;
+        },
+        async fetchCarBaseStats(apiKey) {
+            const cached = GM_getValue('tornCarCache', null);
+            if (cached && Date.now() - cached.timestamp < 86400000) return cached.data;
+            const data = await this.fetchWithAuthHeader('https://api.torn.com/v2/racing/cars', apiKey);
+            const carMap = data.cars ? data.cars.reduce((map, c) => { map[c.car_item_id] = c; return map; }, {}) : {};
+            GM_setValue('tornCarCache', { data: carMap, timestamp: Date.now() });
+            return carMap;
+        },
         async fetchHistoricalRaceData(apiKey, userId, limit) { if (!apiKey) throw new Error("API Key required."); if (!userId) throw new Error("User ID required."); limit = Math.max(10, Math.min(1000, limit || 100)); const url = `https://api.torn.com/v2/user/races?key=${apiKey}&id=${userId}&cat=official&sort=DESC&limit=${limit}`; const response = await fetch(url); if (!response.ok) { let errorMsg = `API Error (${response.status}): ${response.statusText}`; try { const errorData = await response.json(); if (errorData.error?.error) errorMsg = `API Error: ${errorData.error.error} (Code ${errorData.error.code})`; } catch (e) {} throw new Error(errorMsg); } const data = await response.json(); if (data.error) { throw new Error(`API Error: ${data.error.error} (Code ${data.error.code})`); } return data.races || []; },
         async fetchTrackRecords(apiKey, trackId, raceClass) { if (!trackId) throw new Error("Track ID required."); if (!raceClass) throw new Error("Race Class required."); const url = `https://api.torn.com/v2/racing/${trackId}/records?cat=${raceClass}`; const data = await this.fetchWithAuthHeader(url, apiKey); return data.records || []; }
     };
@@ -1380,6 +1464,7 @@
     const DataExporter = {
         getFinalData() {
             const raceData = {
+                 raceId: State.currentRaceId,
                  trackInfo: { ...State.trackInfo },
                  results: State.finalRaceData.map((driver, index) => ({
                      position: index + 1,
@@ -1420,6 +1505,7 @@
 </head>
 <body>
     <h1>Race Results</h1>
+    <h2>Race ID: ${data.raceId || 'N/A'}</h2>
     <h2>Track: ${data.trackInfo.name || 'Unknown'} (${data.trackInfo.laps} Laps, ${data.trackInfo.length} Miles)</h2>
     <table>
         <thead>
@@ -1436,6 +1522,7 @@
         formatAsMarkdown() {
             const data = this.getFinalData();
             let md = `# Race Results\n\n`;
+            md += `**Race ID:** ${data.raceId || 'N/A'}\n`;
             md += `**Track:** ${data.trackInfo.name || 'Unknown'} (${data.trackInfo.laps} Laps, ${data.trackInfo.length} Miles)\n\n`;
             md += `| Pos | Driver | Car | Time/Status |\n`;
             md += `|----:|--------|-----|-------------|\n`;
@@ -1461,6 +1548,7 @@
             ].map(esc).join(','));
 
             let csvString = `# Torn Race Results\n`;
+            csvString += `# Race ID: ${esc(data.raceId || 'N/A')}\n`;
             csvString += `# Track: ${esc(data.trackInfo.name || 'Unknown')} (${data.trackInfo.laps} Laps, ${data.trackInfo.length} Miles)\n`;
             csvString += `# Exported: ${new Date().toISOString()}\n`;
             csvString += `# Script Version: ${ScriptInfo.version}\n`;
@@ -1471,6 +1559,7 @@
         formatAsPlainText() {
             const data = this.getFinalData();
             let txt = `Torn Race Results\n`;
+            txt += `Race ID: ${data.raceId || 'N/A'}\n`;
             txt += `Track: ${data.trackInfo.name || 'Unknown'} (${data.trackInfo.laps} Laps, ${data.trackInfo.length} Miles)\n`;
             txt += `--------------------------------------------------\n`;
             data.results.forEach(r => {
@@ -1492,7 +1581,7 @@
             a.href = url;
             const trackNameSafe = (State.trackInfo.name || 'UnknownTrack').replace(/[^a-z0-9]/gi, '_').toLowerCase();
             const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-            a.download = `torn_race_${trackNameSafe}_${timestamp}.${fileExt}`;
+            a.download = `torn_race_${State.currentRaceId || trackNameSafe}_${timestamp}.${fileExt}`;
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
@@ -1512,6 +1601,16 @@
     };
 
     const RaceManager = {
+        getRaceId() {
+            const firstDriverLi = document.querySelector('#leaderBoard > li[data-id]');
+            if (firstDriverLi && firstDriverLi.dataset.id) {
+                const parts = firstDriverLi.dataset.id.split('-');
+                if (parts.length === 2 && /^\d+$/.test(parts[0])) {
+                    return parts[0];
+                }
+            }
+            return null;
+        },
         parseDriverData(originalLi) { if (!originalLi || !originalLi.matches('li[id^="lbr-"]')) return null; const nameEl = originalLi.querySelector('.name span'); const carEl = originalLi.querySelector('.car img'); const colorEl = originalLi.querySelector('.color'); const timeEl = originalLi.querySelector('.time'); const statusDiv = originalLi.querySelector('.status-wrap > div'); const dataId = originalLi.dataset.id; const userId = dataId ? dataId.split('-')[1] : null; if (!userId) { return null; } const progressText = timeEl ? timeEl.textContent.trim() : '0%'; const progressPercentage = Utils.parseProgress(progressText); let statusClass = 'unknown'; let isFinished = false; let isCrashed = false; if (statusDiv) { const classList = statusDiv.classList; if (classList.contains('crashed')) { isCrashed = true; statusClass = 'crashed'; } else if (classList.contains('gold') || classList.contains('silver') || classList.contains('bronze') || classList.contains('finished')) { isFinished = true; statusClass = 'finished'; } } if (!isFinished && !isCrashed && timeEl && timeEl.textContent.includes(':')) { isFinished = true; statusClass = 'finished'; } if (!isCrashed && !isFinished) { if (progressPercentage > 0) { statusClass = 'racing'; } else { let raceStarted = false; const anyTimeEl = document.querySelector('#leaderBoard li .time:not(:empty)'); if (anyTimeEl) { raceStarted = true; } statusClass = raceStarted ? 'racing' : 'ready'; } } if (State.previousMetrics[userId]?.statusClass === 'finished' && statusClass !== 'crashed') { statusClass = 'finished'; } return { userId, originalId: originalLi.id, name: nameEl ? nameEl.textContent.trim() : 'N/A', carImgRaw: carEl ? carEl.getAttribute('src') : '', carTitle: carEl ? carEl.title : 'Unknown Car', colorClass: colorEl ? colorEl.className.replace('color', '').trim() : 'color-default', statusClass, originalStatusText: progressText, progress: progressPercentage }; },
         async updateTrackAndClassInfo() {
             let trackInfoUpdated = false;
@@ -1914,11 +2013,28 @@
     async function initialize() {
         if (State.isInitialized) { return true; }
         try {
-            const userInput = document.getElementById('torn-user');
-            if (!userInput) throw new Error("User input not found.");
-            const userData = JSON.parse(userInput.value);
-            State.userId = userData.id?.toString();
-            if (!State.userId) throw new Error("User ID not found.");
+            let userIdFound = false;
+            // Primary source: topBannerInitData global object
+            const userIdFromBanner = window.topBannerInitData?.user?.data?.userID;
+            if (userIdFromBanner) {
+                State.userId = userIdFromBanner.toString();
+                userIdFound = true;
+            }
+
+            // Fallback source: #torn-user input element
+            if (!userIdFound) {
+                const userInput = document.getElementById('torn-user');
+                if (userInput) {
+                    const userData = JSON.parse(userInput.value);
+                    State.userId = userData.id?.toString();
+                    if (State.userId) {
+                        userIdFound = true;
+                    }
+                }
+            }
+
+            if (!userIdFound) throw new Error("User ID could not be determined.");
+
 
             // Auto-configure PDA key if running in PDA and no key is set
             if (isPDA && Config.get('apiKey') === '') {
@@ -1951,6 +2067,7 @@
             }
 
             UI.initializeControls();
+            State.currentRaceId = RaceManager.getRaceId();
             await RaceManager.updateTrackAndClassInfo();
             document.body.classList.toggle('hide-original-leaderboard', Config.get('hideOriginalList'));
 
@@ -1965,6 +2082,10 @@
                     window.requestAnimationFrame(async () => {
                         if (State.isUpdating || !State.isInitialized) return;
                          try {
+                             const detectedRaceId = RaceManager.getRaceId();
+                             if (detectedRaceId && detectedRaceId !== State.currentRaceId) {
+                                 State.currentRaceId = detectedRaceId;
+                             }
                             await RaceManager.updateTrackAndClassInfo();
                             RaceManager.stableUpdateCustomList();
                         } catch (e) {
