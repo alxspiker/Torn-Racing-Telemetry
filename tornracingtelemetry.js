@@ -1132,8 +1132,11 @@
                 const lapDelta = hasPrevious && Number.isFinite(recentAgg.avgBestLap) && Number.isFinite(previousAgg.avgBestLap)
                     ? recentAgg.avgBestLap - previousAgg.avgBestLap
                     : null;
-                const skillDelta = hasPrevious && Number.isFinite(recentAgg.avgSkillGainPerRace) && Number.isFinite(previousAgg.avgSkillGainPerRace)
-                    ? recentAgg.avgSkillGainPerRace - previousAgg.avgSkillGainPerRace
+                const skillGainValues = raceEntries
+                    .map(entry => entry.skillGain)
+                    .filter(value => Number.isFinite(value));
+                const avgSkillGainShown = skillGainValues.length
+                    ? (skillGainValues.reduce((sum, value) => sum + value, 0) / skillGainValues.length)
                     : null;
 
                 fragment.appendChild(this.createStatsCards([
@@ -1159,9 +1162,9 @@
                         trendClass: lapDelta < 0 ? 'positive' : (lapDelta > 0 ? 'negative' : '')
                     },
                     {
-                        label: 'Avg Skill / Race Δ',
-                        value: this.formatSignedNumber(skillDelta, 4),
-                        trendClass: skillDelta > 0 ? 'positive' : (skillDelta < 0 ? 'negative' : '')
+                        label: 'Avg Skill / Race',
+                        value: this.formatSignedNumber(avgSkillGainShown, 4),
+                        trendClass: avgSkillGainShown > 0 ? 'positive' : (avgSkillGainShown < 0 ? 'negative' : '')
                     }
                 ], 'stats-delta-cards'));
 
