@@ -1,6 +1,7 @@
     const Utils = {
         convertSpeed(speed, unit) { return unit === 'kmh' ? speed * 1.60934 : speed; },
         formatTime(seconds, showMs = false) { if (isNaN(seconds) || seconds < 0 || !isFinite(seconds)) return '--:--' + (showMs ? '.---' : ''); const min = Math.floor(seconds / 60); const sec = Math.floor(seconds % 60); const ms = showMs ? '.' + (seconds % 1).toFixed(3).substring(2) : ''; return `${min}:${sec < 10 ? '0' : ''}${sec}${ms}`; },
+        sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); },
         formatDate(timestamp, includeTime = false) {
             if (!timestamp || timestamp <= 0) return 'N/A';
             try {
@@ -25,6 +26,38 @@
         parseProgress(text) { const match = text?.match(/(\d+\.?\d*)%/); return match ? parseFloat(match[1]) : 0; },
         makeAbsoluteUrl(url) { if (!url || url.startsWith('http') || url.startsWith('data:')) return url; if (url.startsWith('//')) return `${window.location.protocol}${url}`; if (url.startsWith('/')) return `${window.location.protocol}//${window.location.host}${url}`; const base = window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/')); return `${window.location.protocol}//${window.location.host}${base}/${url}`; },
         showNotification(message, type = 'info') { const notif = document.createElement('div'); notif.style.cssText = `position: fixed; bottom: 20px; right: 20px; background: ${type === 'error' ? '#f44336' : type === 'success' ? '#4CAF50' : '#2196F3'}; color: white; padding: 12px 20px; border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.3); z-index: 9999; font-size: 14px; opacity: 0; transition: opacity 0.3s ease-in-out;`; notif.textContent = message; document.body.appendChild(notif); setTimeout(() => notif.style.opacity = '1', 10); setTimeout(() => { notif.style.opacity = '0'; setTimeout(() => notif.remove(), 300); }, 3000); },
+        createElement(tagName, options = {}) {
+            const element = document.createElement(tagName);
+            const { className, text, html, attrs, dataset, children } = options;
+
+            if (className) {
+                element.className = className;
+            }
+            if (typeof text !== 'undefined') {
+                element.textContent = text;
+            } else if (typeof html !== 'undefined') {
+                element.innerHTML = html;
+            }
+            if (attrs && typeof attrs === 'object') {
+                Object.entries(attrs).forEach(([key, value]) => {
+                    if (value !== null && typeof value !== 'undefined') {
+                        element.setAttribute(key, String(value));
+                    }
+                });
+            }
+            if (dataset && typeof dataset === 'object') {
+                Object.entries(dataset).forEach(([key, value]) => {
+                    if (value !== null && typeof value !== 'undefined') {
+                        element.dataset[key] = String(value);
+                    }
+                });
+            }
+            if (Array.isArray(children)) {
+                children.filter(Boolean).forEach(child => element.appendChild(child));
+            }
+
+            return element;
+        },
         createChart(ctx, config) {
              if (!ctx || typeof Chart === 'undefined') return null;
              try {

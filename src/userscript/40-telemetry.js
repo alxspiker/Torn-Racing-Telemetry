@@ -2,6 +2,39 @@
         easeInOutQuad(t) { return t < 0.5 ? 2*t*t : -1+(4-2*t)*t; },
         interpolateColor(color1, color2, factor) { const result = color1.map((c, i) => Math.round(c + factor * (color2[i] - c))); return `rgb(${result[0]}, ${result[1]}, ${result[2]})`; },
         getTelemetryColor(acceleration) { const grey = [136, 136, 136]; const green = [76, 175, 80]; const red = [244, 67, 54]; const defaultColor = getComputedStyle(document.documentElement).getPropertyValue('--telemetry-default-color').match(/\d+/g)?.map(Number) || grey; const accelColor = getComputedStyle(document.documentElement).getPropertyValue('--telemetry-accel-color').match(/\d+/g)?.map(Number) || green; const decelColor = getComputedStyle(document.documentElement).getPropertyValue('--telemetry-decel-color').match(/\d+/g)?.map(Number) || red; if (!Config.get('colorCode')) return `rgb(${defaultColor.join(', ')})`; const maxAcc = 1.0; let factor = Math.min(Math.abs(acceleration) / maxAcc, 1); factor = isNaN(factor) ? 0 : factor; if (acceleration > 0.05) return this.interpolateColor(defaultColor, accelColor, factor); if (acceleration < -0.05) return this.interpolateColor(defaultColor, decelColor, factor); return `rgb(${defaultColor.join(', ')})`; },
+        ensureDisplayRefs(container) {
+            if (!container) return null;
+            if (container._displayRefs?.value && container._displayRefs?.lapEstimate) {
+                return container._displayRefs;
+            }
+
+            let valueSpan = container.querySelector('.telemetry-value');
+            if (!valueSpan) {
+                valueSpan = document.createElement('span');
+                valueSpan.className = 'telemetry-value';
+            }
+
+            let lapEstimateSpan = container.querySelector('.lap-estimate');
+            if (!lapEstimateSpan) {
+                lapEstimateSpan = document.createElement('span');
+                lapEstimateSpan.className = 'lap-estimate';
+            }
+
+            if (container.firstChild !== valueSpan || container.lastChild !== lapEstimateSpan) {
+                container.replaceChildren(valueSpan, lapEstimateSpan);
+            }
+
+            container._displayRefs = { value: valueSpan, lapEstimate: lapEstimateSpan };
+            return container._displayRefs;
+        },
+        setTelemetryDisplay(container, text, color, lapEstimateText = '') {
+            const refs = this.ensureDisplayRefs(container);
+            if (!refs) return;
+
+            refs.value.textContent = text;
+            refs.lapEstimate.textContent = lapEstimateText ? `(${lapEstimateText})` : '';
+            container.style.color = color;
+        },
         ema(current, prev, alpha) {
             if (prev === null || typeof prev === 'undefined' || !isFinite(prev)) return current;
             return alpha * current + (1 - alpha) * prev;
@@ -143,7 +176,7 @@
             driverState.smoothedLapEstimate = smoothedEstimate;
             return smoothedEstimate;
         },
-        animateTelemetry(element, fromSpeed, toSpeed, fromAcc, toAcc, duration, displayMode, speedUnit, extraText) {
+        animateTelemetry(element, fromSpeed, toSpeed, fromAcc, toAcc, duration, displayMode, speedUnit, lapEstimateText) {
             let startTime = null;
             const easeFunction = this.easeInOutQuad;
             const getColor = this.getTelemetryColor.bind(this);
@@ -172,8 +205,7 @@
                 else if (displayMode === 'acceleration') { text = `${currentAcc.toFixed(1)} g`; }
                 else if (displayMode === 'both') { text = `${Math.round(currentSpeed)} ${speedUnit} | ${currentAcc.toFixed(1)} g`; }
 
-                element.innerHTML = text + extraText;
-                element.style.color = color;
+                Telemetry.setTelemetryDisplay(element, text, color, lapEstimateText);
 
                 if (linearProgress < 1) {
                     element._animationRAF = requestAnimationFrame(step);
@@ -185,8 +217,7 @@
                     if (displayMode === 'speed') { finalText = finalSpeedText; }
                     else if (displayMode === 'acceleration') { finalText = finalAccelText; }
                     else if (displayMode === 'both') { finalText = `${finalSpeedText} | ${finalAccelText}`; }
-                    element.innerHTML = finalText + extraText;
-                    element.style.color = Config.get('colorCode') ? getColor(toAcc) : 'var(--telemetry-default-color)';
+                    Telemetry.setTelemetryDisplay(element, finalText, Config.get('colorCode') ? getColor(toAcc) : 'var(--telemetry-default-color)', lapEstimateText);
                     element._currentAnimSpeed = undefined;
                     element._currentAnimAcc = undefined;
                 }
