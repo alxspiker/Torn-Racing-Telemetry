@@ -249,7 +249,6 @@
         .api-stats-container.error .api-stat-error-msg, .api-stats-container.no-key .api-stat-error-msg { color: var(--api-error-color); display: block; font-style: italic; }
         .api-stats-container.no-key .api-stat-error-msg { color: var(--api-info-color); }
         .api-stat-error-msg { display: none; margin-top: 6px; }
-        .api-stats-container p { margin: 3px 0; }
         .api-stat { font-weight: bold; color: var(--text-color); }
         .driver-details-footer { border-top: 1px dashed var(--border-color); padding-top: 6px; color: #9ca4ad; font-size: 0.78em; }
         #telemetryControlsContainer { margin: 10px 0 5px 0; justify-content: flex-end; gap: 5px; }

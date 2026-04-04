@@ -1,7 +1,7 @@
     const State = {
         userId: null, previousMetrics: {},
         trackInfo: { id: null, name: null, laps: 5, length: 3.4, get total() { return this.laps * this.length; } },
-        observers: [], lastUpdateTimes: {}, periodicCheckIntervalId: null, isUpdating: false,
+        observers: [], isUpdating: false,
         customUIContainer: null, originalLeaderboard: null,
         settingsPopupInstance: null, advancedStatsPanelInstance: null, historyPanelInstance: null, infoPanelInstance: null, downloadPopupInstance: null,
         trackNameMap: null, carBaseStatsMap: null, currentRaceClass: null,
@@ -19,9 +19,6 @@
             });
 
             this.previousMetrics = {};
-            this.lastUpdateTimes = {};
-            if (this.periodicCheckIntervalId) clearInterval(this.periodicCheckIntervalId);
-            this.periodicCheckIntervalId = null;
             document.querySelectorAll('.custom-driver-item[data-stats-loaded]').forEach(el => {
                 el.removeAttribute('data-stats-loaded');
                 el.querySelectorAll('.api-stat').forEach(span => span.textContent = '...');

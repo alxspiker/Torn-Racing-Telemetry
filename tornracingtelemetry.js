@@ -125,7 +125,7 @@
     const State = {
         userId: null, previousMetrics: {},
         trackInfo: { id: null, name: null, laps: 5, length: 3.4, get total() { return this.laps * this.length; } },
-        observers: [], lastUpdateTimes: {}, periodicCheckIntervalId: null, isUpdating: false,
+        observers: [], isUpdating: false,
         customUIContainer: null, originalLeaderboard: null,
         settingsPopupInstance: null, advancedStatsPanelInstance: null, historyPanelInstance: null, infoPanelInstance: null, downloadPopupInstance: null,
         trackNameMap: null, carBaseStatsMap: null, currentRaceClass: null,
@@ -143,9 +143,6 @@
             });
 
             this.previousMetrics = {};
-            this.lastUpdateTimes = {};
-            if (this.periodicCheckIntervalId) clearInterval(this.periodicCheckIntervalId);
-            this.periodicCheckIntervalId = null;
             document.querySelectorAll('.custom-driver-item[data-stats-loaded]').forEach(el => {
                 el.removeAttribute('data-stats-loaded');
                 el.querySelectorAll('.api-stat').forEach(span => span.textContent = '...');
@@ -2688,36 +2685,22 @@
                             : driverState.lastDisplayedAcceleration || 0;
                         const animationDuration = Math.min(metrics.timeDelta || Config.get('minUpdateInterval'), Config.get('maxAnimationDurationMs'));
 
-                        let animationMode = '';
-                        if (displayOptions.includes('speed') && displayOptions.includes('acceleration')) animationMode = 'both';
-                        else if (displayOptions.includes('speed')) animationMode = 'speed';
-                        else if (displayOptions.includes('acceleration')) animationMode = 'acceleration';
+                        const animationMode = displayOptions.includes('speed')
+                            ? (displayOptions.includes('acceleration') ? 'both' : 'speed')
+                            : 'acceleration';
 
-                        if (animationMode) {
-                            Telemetry.animateTelemetry(
-                                telemetryDiv,
-                                fromSpeed,
-                                Math.round(targetSpeed),
-                                fromAcc,
-                                targetAcc,
-                                animationDuration,
-                                animationMode,
-                                speedUnit,
-                                lapEstimateText,
-                                displayOptions.includes('progress') ? `${driverData.progress.toFixed(1)}%` : ''
-                            );
-                        } else {
-                            if (telemetryDiv._animationRAF) {
-                                cancelAnimationFrame(telemetryDiv._animationRAF);
-                            }
-                            telemetryDiv._animationRAF = null;
-                            Telemetry.setTelemetryDisplay(
-                                telemetryDiv,
-                                `${Math.round(targetSpeed)} ${speedUnit}`,
-                                Config.get('colorCode') ? Telemetry.getTelemetryColor(targetAcc) : 'var(--telemetry-default-color)',
-                                lapEstimateText
-                            );
-                        }
+                        Telemetry.animateTelemetry(
+                            telemetryDiv,
+                            fromSpeed,
+                            Math.round(targetSpeed),
+                            fromAcc,
+                            targetAcc,
+                            animationDuration,
+                            animationMode,
+                            speedUnit,
+                            lapEstimateText,
+                            displayOptions.includes('progress') ? `${driverData.progress.toFixed(1)}%` : ''
+                        );
                     } else {
                         if (telemetryDiv._animationRAF) {
                             cancelAnimationFrame(telemetryDiv._animationRAF);
@@ -2947,7 +2930,6 @@
                 }
                 if (State.previousMetrics[removedUserId]) {
                     delete State.previousMetrics[removedUserId];
-                    delete State.lastUpdateTimes[removedUserId];
                 }
                 elementToRemove.remove();
             });
@@ -3293,7 +3275,6 @@
         .api-stats-container.error .api-stat-error-msg, .api-stats-container.no-key .api-stat-error-msg { color: var(--api-error-color); display: block; font-style: italic; }
         .api-stats-container.no-key .api-stat-error-msg { color: var(--api-info-color); }
         .api-stat-error-msg { display: none; margin-top: 6px; }
-        .api-stats-container p { margin: 3px 0; }
         .api-stat { font-weight: bold; color: var(--text-color); }
         .driver-details-footer { border-top: 1px dashed var(--border-color); padding-top: 6px; color: #9ca4ad; font-size: 0.78em; }
         #telemetryControlsContainer { margin: 10px 0 5px 0; justify-content: flex-end; gap: 5px; }

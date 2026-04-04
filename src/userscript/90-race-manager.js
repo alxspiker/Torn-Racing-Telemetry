@@ -314,36 +314,22 @@
                             : driverState.lastDisplayedAcceleration || 0;
                         const animationDuration = Math.min(metrics.timeDelta || Config.get('minUpdateInterval'), Config.get('maxAnimationDurationMs'));
 
-                        let animationMode = '';
-                        if (displayOptions.includes('speed') && displayOptions.includes('acceleration')) animationMode = 'both';
-                        else if (displayOptions.includes('speed')) animationMode = 'speed';
-                        else if (displayOptions.includes('acceleration')) animationMode = 'acceleration';
+                        const animationMode = displayOptions.includes('speed')
+                            ? (displayOptions.includes('acceleration') ? 'both' : 'speed')
+                            : 'acceleration';
 
-                        if (animationMode) {
-                            Telemetry.animateTelemetry(
-                                telemetryDiv,
-                                fromSpeed,
-                                Math.round(targetSpeed),
-                                fromAcc,
-                                targetAcc,
-                                animationDuration,
-                                animationMode,
-                                speedUnit,
-                                lapEstimateText,
-                                displayOptions.includes('progress') ? `${driverData.progress.toFixed(1)}%` : ''
-                            );
-                        } else {
-                            if (telemetryDiv._animationRAF) {
-                                cancelAnimationFrame(telemetryDiv._animationRAF);
-                            }
-                            telemetryDiv._animationRAF = null;
-                            Telemetry.setTelemetryDisplay(
-                                telemetryDiv,
-                                `${Math.round(targetSpeed)} ${speedUnit}`,
-                                Config.get('colorCode') ? Telemetry.getTelemetryColor(targetAcc) : 'var(--telemetry-default-color)',
-                                lapEstimateText
-                            );
-                        }
+                        Telemetry.animateTelemetry(
+                            telemetryDiv,
+                            fromSpeed,
+                            Math.round(targetSpeed),
+                            fromAcc,
+                            targetAcc,
+                            animationDuration,
+                            animationMode,
+                            speedUnit,
+                            lapEstimateText,
+                            displayOptions.includes('progress') ? `${driverData.progress.toFixed(1)}%` : ''
+                        );
                     } else {
                         if (telemetryDiv._animationRAF) {
                             cancelAnimationFrame(telemetryDiv._animationRAF);
@@ -573,7 +559,6 @@
                 }
                 if (State.previousMetrics[removedUserId]) {
                     delete State.previousMetrics[removedUserId];
-                    delete State.lastUpdateTimes[removedUserId];
                 }
                 elementToRemove.remove();
             });
