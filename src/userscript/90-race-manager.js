@@ -386,24 +386,82 @@
             if (detailsDiv) {
                 const needsHTMLStructure = detailsVisible && !detailsDiv.hasChildNodes();
                 if (needsHTMLStructure) {
-                    let localInfoHTML = `<p><strong>Position:</strong> <span class="detail-stat detail-position">${driverData.statusClass === 'crashed' ? 'Crashed' : position}</span></p>`;
-                    localInfoHTML += `<p><strong>Progress:</strong> <span class="detail-stat detail-progress">${driverData.progress.toFixed(2)}%</span></p>`;
-                    localInfoHTML += `<p><strong>Lap:</strong> <span class="detail-stat detail-lap">-/-</span></p>`;
-                    localInfoHTML += `<p><strong>Lap Progress:</strong> <span class="detail-stat detail-lap-progress">-%</span></p>`;
-                    localInfoHTML += `<p><strong>Speed (Calc MPH):</strong> <span class="detail-stat detail-calc-speed">-</span> mph</p>`;
-                    localInfoHTML += `<p><strong>Accel (Calc g):</strong> <span class="detail-stat detail-calc-accel">-</span> g</p>`;
-                    localInfoHTML += `<p class="p-est-lap-time" style="display: none;"><strong>Est. Lap Time:</strong> <span class="detail-stat detail-est-lap-time">N/A</span></p>`;
                     const apiStatsHTML = Config.get('fetchApiStatsOnClick')
-                        ? `<div class="api-stats-container"><p>Skill: <span class="api-stat stat-skill">...</span></p><p>Points: <span class="api-stat stat-points">...</span></p><p>Races: <span class="api-stat stat-races-entered">...</span> (<span class="api-stat stat-races-won">...</span> Wins)</p><p>Win Rate: <span class="api-stat stat-win-rate">...</span></p><span class="api-stat-error-msg"></span></div>`
+                        ? `
+                            <div class="api-stats-container">
+                                <div class="driver-section-title">API Racing Stats</div>
+                                <div class="driver-api-grid">
+                                    <div class="driver-api-item">
+                                        <span class="driver-api-label">Skill</span>
+                                        <span class="driver-api-value"><span class="api-stat stat-skill">...</span></span>
+                                    </div>
+                                    <div class="driver-api-item">
+                                        <span class="driver-api-label">Points</span>
+                                        <span class="driver-api-value"><span class="api-stat stat-points">...</span></span>
+                                    </div>
+                                    <div class="driver-api-item">
+                                        <span class="driver-api-label">Races</span>
+                                        <span class="driver-api-value"><span class="api-stat stat-races-entered">...</span> (<span class="api-stat stat-races-won">...</span> wins)</span>
+                                    </div>
+                                    <div class="driver-api-item">
+                                        <span class="driver-api-label">Win Rate</span>
+                                        <span class="driver-api-value"><span class="api-stat stat-win-rate">...</span></span>
+                                    </div>
+                                </div>
+                                <span class="api-stat-error-msg"></span>
+                            </div>`
                         : '';
 
                     detailsDiv.innerHTML = `
-                        <p><strong>User:</strong> ${driverData.name} [<a href="/profiles.php?XID=${driverId}" target="_blank" rel="noopener noreferrer" title="View Profile">${driverId}</a>] ${isSelf ? '<strong>(You)</strong>' : ''}</p>
-                        <p><strong>Car:</strong> ${driverData.carTitle}</p>
-                        <p><strong>Status:</strong> <span style="text-transform: capitalize;" class="detail-status">${driverData.statusClass}</span> <span class="detail-original-status"></span></p>
-                        ${localInfoHTML}
-                        ${apiStatsHTML}
-                        <p><em>Original ID: ${driverData.originalId}</em></p>`;
+                        <div class="driver-details-shell">
+                            <div class="driver-details-topline">
+                                <div class="driver-identity">
+                                    <span class="driver-identity-label">User</span>
+                                    <span class="driver-identity-value">${driverData.name} [<a href="/profiles.php?XID=${driverId}" target="_blank" rel="noopener noreferrer" title="View Profile">${driverId}</a>] ${isSelf ? '<strong>(You)</strong>' : ''}</span>
+                                </div>
+                                <div class="driver-status-wrap">
+                                    <span class="driver-identity-label">Status</span>
+                                    <span class="driver-status-chip detail-status">${driverData.statusClass}</span>
+                                    <span class="detail-original-status"></span>
+                                </div>
+                            </div>
+                            <div class="driver-meta-row">
+                                <span class="driver-identity-label">Car</span>
+                                <span class="driver-identity-value">${driverData.carTitle}</span>
+                            </div>
+                            <div class="driver-metrics-grid">
+                                <div class="driver-metric-item">
+                                    <span class="driver-metric-label">Position</span>
+                                    <span class="driver-metric-value detail-stat detail-position">${driverData.statusClass === 'crashed' ? 'Crashed' : position}</span>
+                                </div>
+                                <div class="driver-metric-item">
+                                    <span class="driver-metric-label">Progress</span>
+                                    <span class="driver-metric-value detail-stat detail-progress">${driverData.progress.toFixed(2)}%</span>
+                                </div>
+                                <div class="driver-metric-item">
+                                    <span class="driver-metric-label">Lap</span>
+                                    <span class="driver-metric-value detail-stat detail-lap">-/-</span>
+                                </div>
+                                <div class="driver-metric-item">
+                                    <span class="driver-metric-label">Lap Progress</span>
+                                    <span class="driver-metric-value detail-stat detail-lap-progress">-%</span>
+                                </div>
+                                <div class="driver-metric-item">
+                                    <span class="driver-metric-label">Calc Speed</span>
+                                    <span class="driver-metric-value"><span class="detail-stat detail-calc-speed">-</span><span class="metric-unit"> mph</span></span>
+                                </div>
+                                <div class="driver-metric-item">
+                                    <span class="driver-metric-label">Calc Accel</span>
+                                    <span class="driver-metric-value"><span class="detail-stat detail-calc-accel">-</span><span class="metric-unit"> g</span></span>
+                                </div>
+                                <div class="driver-metric-item metric-est-lap p-est-lap-time" style="display: none;">
+                                    <span class="driver-metric-label">Est. Lap Time</span>
+                                    <span class="driver-metric-value detail-stat detail-est-lap-time">N/A</span>
+                                </div>
+                            </div>
+                            ${apiStatsHTML}
+                            <div class="driver-details-footer">Source ID: ${driverData.originalId}</div>
+                        </div>`;
 
                     if (Config.get('fetchApiStatsOnClick') && driverId && !element.hasAttribute('data-stats-loaded') && !APIManager.isFetching.has(driverId)) {
                         setTimeout(() => APIManager.fetchAndDisplayRacingStats(element, driverId), 50);

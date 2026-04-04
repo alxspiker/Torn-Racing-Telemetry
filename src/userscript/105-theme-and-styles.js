@@ -221,14 +221,37 @@
         .driver-details strong { color: #ddd; }
         .driver-details a { color: var(--panel-link-color); text-decoration: none; }
         .driver-details a:hover { text-decoration: underline; }
-        .custom-driver-item.details-visible .driver-details { max-height: 350px; opacity: 1; padding-top: 8px; padding-bottom: 8px; margin-top: 6px; }
-        .api-stats-container { border-top: 1px dashed var(--border-color); margin-top: 8px; padding-top: 8px; }
+        .custom-driver-item.details-visible .driver-details { max-height: 520px; opacity: 1; padding-top: 8px; padding-bottom: 8px; margin-top: 6px; }
+        .driver-details-shell { display: flex; flex-direction: column; gap: 8px; }
+        .driver-details-topline { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
+        .driver-identity, .driver-status-wrap { display: flex; flex-direction: column; gap: 2px; }
+        .driver-identity { flex: 1 1 220px; min-width: 0; }
+        .driver-status-wrap { margin-left: auto; align-items: flex-end; min-width: 96px; }
+        .driver-identity-label { font-size: 0.72em; letter-spacing: 0.06em; text-transform: uppercase; color: #9ca4ad; font-weight: 700; }
+        .driver-identity-value { color: var(--text-color); font-weight: 600; line-height: 1.3; }
+        .driver-status-chip { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 999px; background: rgba(0, 0, 0, 0.24); border: 1px solid var(--border-color); color: var(--text-color); font-weight: 700; text-transform: capitalize; }
+        .custom-driver-item.status-ready .driver-status-chip { background: rgba(144, 164, 174, 0.18); border-color: rgba(144, 164, 174, 0.45); color: #cfd8dc; }
+        .custom-driver-item.status-racing .driver-status-chip { background: rgba(116, 192, 252, 0.16); border-color: rgba(116, 192, 252, 0.45); color: #cfe8ff; }
+        .custom-driver-item.status-finished .driver-status-chip { background: rgba(129, 199, 132, 0.18); border-color: rgba(129, 199, 132, 0.45); color: #d7f4db; }
+        .custom-driver-item.status-crashed .driver-status-chip { background: rgba(229, 115, 115, 0.2); border-color: rgba(229, 115, 115, 0.45); color: #ffd9d9; }
+        .detail-original-status { color: #9ca4ad; font-size: 0.85em; }
+        .detail-original-status:empty { display: none; }
+        .driver-meta-row { display: grid; grid-template-columns: auto 1fr; align-items: baseline; column-gap: 8px; }
+        .driver-metrics-grid, .driver-api-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 7px; }
+        .driver-metric-item, .driver-api-item { border: 1px solid var(--border-color); border-radius: 6px; background: rgba(0, 0, 0, 0.16); padding: 5px 7px; min-height: 42px; display: flex; flex-direction: column; justify-content: center; gap: 3px; }
+        .driver-metric-label, .driver-api-label { font-size: 0.72em; color: #9ca4ad; letter-spacing: 0.05em; text-transform: uppercase; font-weight: 700; }
+        .driver-metric-value, .driver-api-value { color: var(--text-color); font-weight: 700; line-height: 1.25; }
+        .driver-metric-value .metric-unit { color: #9ca4ad; font-weight: 500; }
+        .driver-metric-item.metric-est-lap { grid-column: 1 / -1; }
+        .api-stats-container { margin-top: 0; padding-top: 0; border-top: none; }
+        .driver-section-title { font-size: 0.72em; letter-spacing: 0.06em; text-transform: uppercase; color: #9ca4ad; font-weight: 700; margin-bottom: 6px; }
         .api-stats-container.loading .api-stat { color: var(--api-loading-color); font-style: italic; }
         .api-stats-container.error .api-stat-error-msg, .api-stats-container.no-key .api-stat-error-msg { color: var(--api-error-color); display: block; font-style: italic; }
         .api-stats-container.no-key .api-stat-error-msg { color: var(--api-info-color); }
-        .api-stat-error-msg { display: none; }
+        .api-stat-error-msg { display: none; margin-top: 6px; }
         .api-stats-container p { margin: 3px 0; }
         .api-stat { font-weight: bold; color: var(--text-color); }
+        .driver-details-footer { border-top: 1px dashed var(--border-color); padding-top: 6px; color: #9ca4ad; font-size: 0.78em; }
         #telemetryControlsContainer { margin: 10px 0 5px 0; justify-content: flex-end; gap: 5px; }
         .telemetry-download-button, .telemetry-info-button, .telemetry-history-button, .telemetry-stats-button, .telemetry-settings-button { background: var(--background-light); color: var(--text-color); border: 1px solid var(--border-color); padding: 6px 12px; text-align: center; cursor: pointer; transition: all 0.2s ease; font-size: 13px; border-radius: 4px; display: inline-block; }
         .telemetry-info-button:hover, .telemetry-history-button:hover, .telemetry-stats-button:hover, .telemetry-settings-button:hover, .telemetry-download-button:hover { background-color: var(--panel-hover-bg); color: var(--text-color); }
@@ -365,6 +388,6 @@
         .api-tos-container td { color: var(--text-color); }
         .api-tos-container code { background: var(--background-light); padding: 2px 4px; border-radius: 3px; font-family: monospace; }
         .color-1 { background-color: #DC143C; } .color-2 { background-color: #4682B4; } .color-3 { background-color: #32CD32; } .color-4 { background-color: #FFD700; } .color-5 { background-color: #FF8C00; } .color-6 { background-color: #9932CC; } .color-7 { background-color: #00CED1; } .color-8 { background-color: #FF1493; } .color-9 { background-color: #8B4513; } .color-10 { background-color: #7FFF00; } .color-11 { background-color: #00FA9A; } .color-12 { background-color: #D2691E; } .color-13 { background-color: #6495ED; } .color-14 { background-color: #F08080; } .color-15 { background-color: #20B2AA; } .color-16 { background-color: #B0C4DE; } .color-17 { background-color: #DA70D6; } .color-18 { background-color: #FF6347; } .color-19 { background-color: #40E0D0; } .color-20 { background-color: #C71585; } .color-21 { background-color: #6A5ACD; } .color-22 { background-color: #FA8072; } .color-default { background-color: #666; }
-        @media (max-width: 768px) { .custom-driver-item { padding: 5px; } .driver-info-row { margin-bottom: 4px; } .driver-name { min-width: 80px; } .driver-telemetry-display { font-size: 0.8em; min-width: 60px; margin-left: 5px; padding: 1px 4px; } .driver-details { font-size: 0.85em; } #custom-driver-list-container { max-height: 350px; } .telemetry-download-button, .telemetry-info-button, .telemetry-history-button, .telemetry-stats-button, .telemetry-settings-button { font-size: 12px; padding: 5px 10px; } .settings-popup-content, .stats-panel-content, .history-panel-content, .info-panel-content, .download-popup-content { width: 95%; padding: 15px; } .settings-title, .stats-title, .history-title, .info-title, .download-title { font-size: 18px; } .settings-btn { padding: 8px 12px; font-size: 14px; } .custom-driver-item.details-visible .driver-details { max-height: 320px; } .stats-content table { font-size: 0.9em; } .stats-content th, .stats-content td { padding: 4px 6px; } .history-content table { font-size: 0.9em; } .history-content th, .history-content td { padding: 4px 6px; } }
-        @media (max-width: 480px) { .driver-name { min-width: 60px; } .driver-telemetry-display { min-width: 55px; font-size: 0.75em; } .stats-content table { font-size: 0.85em; } .stats-content th, .stats-content td { padding: 3px 4px; } .history-content table { font-size: 0.85em; } .history-content th, .history-content td { padding: 3px 4px; } .settings-buttons { flex-direction: column; } .settings-data-buttons { flex-direction: column; } }
+        @media (max-width: 768px) { .custom-driver-item { padding: 5px; } .driver-info-row { margin-bottom: 4px; } .driver-name { min-width: 80px; } .driver-telemetry-display { font-size: 0.8em; min-width: 60px; margin-left: 5px; padding: 1px 4px; } .driver-details { font-size: 0.85em; } #custom-driver-list-container { max-height: 350px; } .telemetry-download-button, .telemetry-info-button, .telemetry-history-button, .telemetry-stats-button, .telemetry-settings-button { font-size: 12px; padding: 5px 10px; } .settings-popup-content, .stats-panel-content, .history-panel-content, .info-panel-content, .download-popup-content { width: 95%; padding: 15px; } .settings-title, .stats-title, .history-title, .info-title, .download-title { font-size: 18px; } .settings-btn { padding: 8px 12px; font-size: 14px; } .custom-driver-item.details-visible .driver-details { max-height: 500px; } .driver-metrics-grid, .driver-api-grid { grid-template-columns: 1fr 1fr; } .driver-status-wrap { margin-left: 0; align-items: flex-start; min-width: 0; } .stats-content table { font-size: 0.9em; } .stats-content th, .stats-content td { padding: 4px 6px; } .history-content table { font-size: 0.9em; } .history-content th, .history-content td { padding: 4px 6px; } }
+        @media (max-width: 480px) { .driver-name { min-width: 60px; } .driver-telemetry-display { min-width: 55px; font-size: 0.75em; } .driver-metrics-grid, .driver-api-grid { grid-template-columns: 1fr; } .driver-meta-row { grid-template-columns: 1fr; row-gap: 2px; } .stats-content table { font-size: 0.85em; } .stats-content th, .stats-content td { padding: 3px 4px; } .history-content table { font-size: 0.85em; } .history-content th, .history-content td { padding: 3px 4px; } .settings-buttons { flex-direction: column; } .settings-data-buttons { flex-direction: column; } }
     `;
