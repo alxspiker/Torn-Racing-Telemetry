@@ -845,7 +845,238 @@
                 return null;
             }
         },
-        createHistoryPanel() {
+        formatSignedNumber(value, decimals = 2) {
+            if (value === null || typeof value === 'undefined' || !Number.isFinite(value)) return 'N/A';
+            const sign = value > 0 ? '+' : '';
+            return `${sign}${value.toFixed(decimals)}`;
+        },
+        normalizeHistoryRaceEntry(race, userId) {
+            if (!race || !Array.isArray(race.results)) return null;
+            const userResult = race.results.find(result => String(result.driver_id) === String(userId));
+            if (!userResult) return null;
+
+            const endTimestampSec = userResult.time_ended ?? race.schedule?.end ?? race.schedule?.start ?? null;
+            const endTimestampMs = Number.isFinite(endTimestampSec) ? endTimestampSec * 1000 : Date.now();
+            const position = Number.isFinite(userResult.position) ? userResult.position : null;
+            const crashed = userResult.has_crashed === true;
+            const raceTime = Number.isFinite(userResult.race_time) ? userResult.race_time : null;
+            const bestLap = Number.isFinite(userResult.best_lap_time) ? userResult.best_lap_time : null;
+            const participants = race.participants?.current ?? race.results.length ?? null;
+            const skillGain = Number.isFinite(race.skill_gain) ? race.skill_gain : null;
+            const trackName = State.trackNameMap?.[race.track_id] || `Track ${race.track_id ?? '?'}`;
+
+            let resultLabel = 'Unknown';
+            if (crashed) resultLabel = 'Crashed';
+            else if (position !== null) resultLabel = `#${position}`;
+            else if (race.status) resultLabel = race.status;
+
+            return {
+                raceId: race.id ?? null,
+                trackId: race.track_id ?? null,
+                trackName,
+                title: race.title || '',
+                status: race.status || '',
+                timestamp: endTimestampMs,
+                position,
+                crashed,
+                resultLabel,
+                participants,
+                skillGain,
+                bestLap,
+                raceTime,
+                carName: userResult.car_item_name || 'Unknown Car',
+                carClass: userResult.car_class || null
+            };
+        },
+        createHistoryDeltaCards(historyLog, raceEntries) {
+            const cardsWrapper = Utils.createElement('div', { className: 'history-summary-cards' });
+            const latest = historyLog[0] || null;
+            const oldest = historyLog[historyLog.length - 1] || null;
+            const skillDelta = (latest && oldest && latest.skill !== null && oldest.skill !== null) ? (latest.skill - oldest.skill) : null;
+            const pointsDelta = (latest && oldest && latest.points !== null && oldest.points !== null) ? (latest.points - oldest.points) : null;
+            const classDelta = (latest && oldest) ? `${oldest.class || 'N/A'} \u2192 ${latest.class || 'N/A'}` : 'N/A';
+
+            const finishedEntries = raceEntries.filter(entry => !entry.crashed && Number.isFinite(entry.position));
+            const wins = finishedEntries.filter(entry => entry.position === 1).length;
+            const podiums = finishedEntries.filter(entry => entry.position <= 3).length;
+            const crashCount = raceEntries.filter(entry => entry.crashed).length;
+            const avgPosition = finishedEntries.length
+                ? (finishedEntries.reduce((sum, entry) => sum + entry.position, 0) / finishedEntries.length)
+                : null;
+
+            const summaryItems = [
+                {
+                    label: 'Skill \u0394',
+                    value: this.formatSignedNumber(skillDelta, 4),
+                    trendClass: skillDelta > 0 ? 'positive' : (skillDelta < 0 ? 'negative' : '')
+                },
+                {
+                    label: 'Points \u0394',
+                    value: this.formatSignedNumber(pointsDelta, 0),
+                    trendClass: pointsDelta > 0 ? 'positive' : (pointsDelta < 0 ? 'negative' : '')
+                },
+                {
+                    label: 'Class Shift',
+                    value: classDelta,
+                    trendClass: ''
+                },
+                {
+                    label: 'Recent Races',
+                    value: String(raceEntries.length),
+                    trendClass: ''
+                },
+                {
+                    label: 'Wins / Podiums',
+                    value: `${wins} / ${podiums}`,
+                    trendClass: ''
+                },
+                {
+                    label: 'Avg Pos / Crashes',
+                    value: `${avgPosition !== null ? avgPosition.toFixed(2) : 'N/A'} / ${crashCount}`,
+                    trendClass: ''
+                }
+            ];
+
+            summaryItems.forEach(item => {
+                const card = Utils.createElement('div', { className: 'history-summary-card' });
+                const label = Utils.createElement('div', { className: 'history-summary-label', text: item.label });
+                const value = Utils.createElement('div', {
+                    className: `history-summary-value${item.trendClass ? ` ${item.trendClass}` : ''}`,
+                    text: item.value
+                });
+                card.append(label, value);
+                cardsWrapper.appendChild(card);
+            });
+
+            return cardsWrapper;
+        },
+        createHistoryRaceTimeline(raceEntries) {
+            const section = document.createDocumentFragment();
+            section.appendChild(Utils.createElement('h3', { text: 'Race Timeline' }));
+
+            if (raceEntries.length === 0) {
+                section.appendChild(this.createPanelMessage('no-history-msg', 'No race events loaded yet.'));
+                return section;
+            }
+
+            const timeline = Utils.createElement('ul', { className: 'history-race-timeline' });
+            raceEntries.slice(0, 15).forEach(entry => {
+                const liClass = `history-race-item ${entry.crashed ? 'crash' : (entry.position === 1 ? 'win' : 'normal')}`;
+                const item = Utils.createElement('li', { className: liClass });
+                const mainLine = Utils.createElement('div', { className: 'history-race-main' });
+                mainLine.append(
+                    Utils.createElement('span', { className: 'history-race-track', text: entry.trackName }),
+                    Utils.createElement('span', { className: 'history-race-result', text: entry.resultLabel }),
+                    Utils.createElement('span', {
+                        className: `history-race-skill ${entry.skillGain > 0 ? 'positive' : (entry.skillGain < 0 ? 'negative' : '')}`,
+                        text: `Skill ${this.formatSignedNumber(entry.skillGain, 4)}`
+                    })
+                );
+                const detailLine = Utils.createElement('div', {
+                    className: 'history-race-meta',
+                    text: `${Utils.formatDate(entry.timestamp, true)} • ${entry.carName} • Time ${entry.raceTime !== null ? Utils.formatTime(entry.raceTime, true) : 'N/A'}`
+                });
+                item.append(mainLine, detailLine);
+                timeline.appendChild(item);
+            });
+
+            section.appendChild(timeline);
+            return section;
+        },
+        createSortableHistoryRacesTable(raceEntries) {
+            const section = document.createDocumentFragment();
+            section.appendChild(Utils.createElement('h3', { text: `Recent Races (${raceEntries.length})` }));
+
+            if (raceEntries.length === 0) {
+                section.appendChild(this.createPanelMessage('no-history-msg', 'No races available for table view.'));
+                return section;
+            }
+
+            const table = document.createElement('table');
+            const thead = document.createElement('thead');
+            const headerRow = document.createElement('tr');
+            const tbody = document.createElement('tbody');
+
+            const sortState = { key: 'timestamp', dir: 'desc' };
+            const columns = [
+                { key: 'timestamp', label: 'Date', className: '' },
+                { key: 'trackName', label: 'Track', className: '' },
+                { key: 'position', label: 'Pos', className: 'numeric' },
+                { key: 'skillGain', label: 'Skill \u0394', className: 'numeric' },
+                { key: 'bestLap', label: 'Best Lap', className: 'numeric' },
+                { key: 'raceTime', label: 'Race Time', className: 'numeric' },
+                { key: 'carName', label: 'Car', className: '' }
+            ];
+
+            const getSortValue = (entry, key) => {
+                if (key === 'position') return entry.position ?? Number.POSITIVE_INFINITY;
+                if (key === 'timestamp') return entry.timestamp ?? 0;
+                if (key === 'skillGain') return entry.skillGain ?? Number.NEGATIVE_INFINITY;
+                if (key === 'bestLap') return entry.bestLap ?? Number.POSITIVE_INFINITY;
+                if (key === 'raceTime') return entry.raceTime ?? Number.POSITIVE_INFINITY;
+                return entry[key] ?? '';
+            };
+            const compare = (left, right) => {
+                const leftValue = getSortValue(left, sortState.key);
+                const rightValue = getSortValue(right, sortState.key);
+                let result = 0;
+                if (typeof leftValue === 'number' && typeof rightValue === 'number') result = leftValue - rightValue;
+                else result = String(leftValue).localeCompare(String(rightValue));
+                return sortState.dir === 'asc' ? result : -result;
+            };
+            const formatPosition = (entry) => {
+                if (entry.crashed) return 'CR';
+                if (Number.isFinite(entry.position)) return String(entry.position);
+                return '-';
+            };
+
+            const renderRows = () => {
+                const sorted = [...raceEntries].sort(compare);
+                const rowNodes = sorted.map(entry => {
+                    const row = document.createElement('tr');
+                    const skillClass = entry.skillGain > 0 ? 'change-positive' : (entry.skillGain < 0 ? 'change-negative' : '');
+
+                    row.append(
+                        Utils.createElement('td', { text: Utils.formatDate(entry.timestamp, true) }),
+                        Utils.createElement('td', { text: entry.trackName }),
+                        Utils.createElement('td', { className: 'numeric', text: formatPosition(entry) }),
+                        Utils.createElement('td', { className: `numeric ${skillClass}`.trim(), text: this.formatSignedNumber(entry.skillGain, 4) }),
+                        Utils.createElement('td', { className: 'numeric', text: entry.bestLap !== null ? Utils.formatTime(entry.bestLap, true) : '-' }),
+                        Utils.createElement('td', { className: 'numeric', text: entry.raceTime !== null ? Utils.formatTime(entry.raceTime, true) : '-' }),
+                        Utils.createElement('td', { text: entry.carName })
+                    );
+                    return row;
+                });
+                tbody.replaceChildren(...rowNodes);
+            };
+
+            columns.forEach(column => {
+                const th = Utils.createElement('th', { className: column.className });
+                const button = Utils.createElement('button', {
+                    className: 'history-sort-btn',
+                    text: column.label,
+                    attrs: { type: 'button' }
+                });
+                button.addEventListener('click', () => {
+                    if (sortState.key === column.key) {
+                        sortState.dir = sortState.dir === 'asc' ? 'desc' : 'asc';
+                    } else {
+                        sortState.key = column.key;
+                        sortState.dir = column.key === 'timestamp' ? 'desc' : 'asc';
+                    }
+                    renderRows();
+                });
+                th.appendChild(button);
+                headerRow.appendChild(th);
+            });
+            thead.appendChild(headerRow);
+            table.append(thead, tbody);
+
+            renderRows();
+            section.appendChild(table);
+            return section;
+        },
+        async createHistoryPanel() {
             if (!Config.get('historyEnabled')) return;
             if (State.historyPanelInstance) State.historyPanelInstance.remove();
             State.destroyActiveCharts();
@@ -856,129 +1087,12 @@
             content.className = 'history-panel-content';
             const historyContentDiv = document.createElement('div');
             historyContentDiv.className = 'history-content';
-
-            const historyLog = HistoryManager.getLog();
-            const panelContentFragment = document.createDocumentFragment();
-
-            const formatHistoryChangeNode = (value, change, decimals = 2) => {
-                if (value === null) {
-                    return document.createTextNode('N/A');
-                }
-                const formattedValue = typeof value === 'number'
-                    ? value.toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
-                    : String(value);
-                if (change === 0 || isNaN(change) || change === null) {
-                    return document.createTextNode(formattedValue);
-                }
-
-                const isIncrease = change > 0;
-                const sign = isIncrease ? '+' : '';
-                const changeClass = isIncrease ? 'change-positive' : 'change-negative';
-                const formattedChange = typeof change === 'number'
-                    ? change.toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
-                    : String(change);
-                const fragment = document.createDocumentFragment();
-                fragment.append(formattedValue);
-                fragment.append(' ');
-                fragment.appendChild(Utils.createElement('span', {
-                    className: `change-indicator ${changeClass}`,
-                    text: `(${sign}${formattedChange})`
-                }));
-                return fragment;
-            };
-            const formatHistoryClassNode = (currentClass, previousClass) => {
-                if (currentClass === null) {
-                    return document.createTextNode('N/A');
-                }
-                if (!previousClass || currentClass === previousClass) {
-                    return document.createTextNode(currentClass);
-                }
-                const fragment = document.createDocumentFragment();
-                fragment.append(currentClass);
-                fragment.append(' ');
-                fragment.appendChild(Utils.createElement('span', {
-                    className: 'change-indicator change-neutral',
-                    text: `(was ${previousClass})`
-                }));
-                return fragment;
-            };
-
-            if (historyLog.length === 0) {
-                panelContentFragment.appendChild(Utils.createElement('p', {
-                    className: 'no-history-msg',
-                    text: 'No historical changes recorded yet.'
-                }));
-            } else {
-                if (historyLog.length > 1 && typeof Chart !== 'undefined') {
-                    const historyChartContainer = Utils.createElement('div', { className: 'history-chart-container' });
-                    historyChartContainer.appendChild(Utils.createElement('canvas', {
-                        attrs: { id: 'historyProgressionChart', style: 'max-height: 250px;' }
-                    }));
-                    panelContentFragment.appendChild(historyChartContainer);
-                } else if (historyLog.length <= 1) {
-                    panelContentFragment.appendChild(Utils.createElement('p', {
-                        className: 'no-history-msg',
-                        text: 'Need at least two data points for a chart.'
-                    }));
-                } else {
-                    panelContentFragment.appendChild(Utils.createElement('p', {
-                        className: 'no-history-msg',
-                        text: 'Charting library not loaded.'
-                    }));
-                }
-
-                panelContentFragment.appendChild(Utils.createElement('h3', { text: `History Log (Last ${historyLog.length})` }));
-                const table = document.createElement('table');
-                const thead = document.createElement('thead');
-                const headerRow = document.createElement('tr');
-                const tbody = document.createElement('tbody');
-                [
-                    { text: 'Date & Time', className: '' },
-                    { text: 'Skill', className: 'numeric' },
-                    { text: 'Class', className: 'numeric' },
-                    { text: 'Points', className: 'numeric' }
-                ].forEach(header => {
-                    headerRow.appendChild(Utils.createElement('th', {
-                        className: header.className,
-                        text: header.text
-                    }));
-                });
-                thead.appendChild(headerRow);
-
-                for (let i = 0; i < historyLog.length; i += 1) {
-                    const entry = historyLog[i];
-                    const olderEntry = historyLog[i + 1] || null;
-                    let skillChange = null;
-                    let pointsChange = null;
-                    let previousClass = null;
-
-                    if (olderEntry) {
-                        skillChange = (entry.skill !== null && olderEntry.skill !== null) ? (entry.skill - olderEntry.skill) : null;
-                        pointsChange = (entry.points !== null && olderEntry.points !== null) ? (entry.points - olderEntry.points) : null;
-                        previousClass = olderEntry.class;
-                    }
-
-                    const row = document.createElement('tr');
-                    const dateCell = Utils.createElement('td', { text: Utils.formatDate(entry.timestamp, true) });
-                    const skillCell = Utils.createElement('td', { className: 'numeric' });
-                    skillCell.appendChild(formatHistoryChangeNode(entry.skill, skillChange, 2));
-                    const classCell = Utils.createElement('td', { className: 'numeric' });
-                    classCell.appendChild(formatHistoryClassNode(entry.class, previousClass));
-                    const pointsCell = Utils.createElement('td', { className: 'numeric' });
-                    pointsCell.appendChild(formatHistoryChangeNode(entry.points, pointsChange, 0));
-                    row.append(dateCell, skillCell, classCell, pointsCell);
-                    tbody.appendChild(row);
-                }
-                table.append(thead, tbody);
-                panelContentFragment.appendChild(table);
-            }
-            historyContentDiv.replaceChildren(panelContentFragment);
+            historyContentDiv.replaceChildren(this.createPanelMessage('loading-msg', 'Loading history panel...', 'div'));
 
             const historyTitle = Utils.createElement('div', { className: 'history-title' });
             historyTitle.append('Your Racing Stats History ');
             historyTitle.appendChild(Utils.createElement('button', { className: 'history-close', text: '\u00D7' }));
-            content.appendChild(historyTitle);
-            content.appendChild(historyContentDiv);
+            content.append(historyTitle, historyContentDiv);
 
             const actionsDiv = document.createElement('div');
             actionsDiv.className = 'panel-actions';
@@ -1020,62 +1134,41 @@
             document.body.appendChild(popup);
             State.historyPanelInstance = popup;
 
-            if (historyLog.length > 1 && typeof Chart !== 'undefined') {
-                this.renderHistoryChart(historyLog);
-            }
-        },
-        renderHistoryChart(historyLog) {
-            const ctx = document.getElementById('historyProgressionChart')?.getContext('2d');
-            if (!ctx) return;
+            const historyLog = HistoryManager.getLog();
+            const historyFragment = document.createDocumentFragment();
+            let raceEntries = [];
 
-            const reversedLog = [...historyLog].reverse();
-            const labels = reversedLog.map(entry => Utils.formatDate(entry.timestamp, true));
-            const skillData = reversedLog.map(entry => entry.skill);
-            const pointsData = reversedLog.map(entry => entry.points);
-            const textColor = getComputedStyle(document.documentElement).getPropertyValue('--text-color').trim();
-            const gridColor = 'rgba(255, 255, 255, 0.1)';
-
-            Utils.createChart(ctx, {
-                type: 'line',
-                data: {
-                    labels,
-                    datasets: [
-                        {
-                            label: 'Racing Skill',
-                            data: skillData,
-                            borderColor: 'var(--primary-color)',
-                            backgroundColor: 'rgba(76, 175, 80, 0.1)',
-                            tension: 0.1,
-                            yAxisID: 'ySkill',
-                            spanGaps: true,
-                            pointRadius: 2,
-                            pointHoverRadius: 4
-                        },
-                        {
-                            label: 'Racing Points',
-                            data: pointsData,
-                            borderColor: 'var(--history-color)',
-                            backgroundColor: 'rgba(255, 193, 7, 0.1)',
-                            tension: 0.1,
-                            yAxisID: 'yPoints',
-                            spanGaps: true,
-                            pointRadius: 2,
-                            pointHoverRadius: 4
-                        }
-                    ]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    interaction: { mode: 'index', intersect: false },
-                    scales: {
-                        x: { ticks: { color: textColor, maxRotation: 70, minRotation: 45, autoSkip: true, maxTicksLimit: 15 }, grid: { color: gridColor }, title: { color: textColor } },
-                        ySkill: { type: 'linear', position: 'left', beginAtZero: false, title: { display: true, text: 'Skill', color: textColor }, ticks: { color: textColor, precision: 2 }, grid: { color: gridColor } },
-                        yPoints: { type: 'linear', position: 'right', beginAtZero: false, title: { display: true, text: 'Points', color: textColor }, ticks: { color: textColor, precision: 0 }, grid: { drawOnChartArea: false } }
-                    },
-                    plugins: { legend: { labels: { color: textColor } }, tooltip: { mode: 'index', intersect: false } }
+            if (Utils.isApiKeyAvailable() && State.userId) {
+                const apiKey = Config.get('apiKey');
+                try {
+                    if (!State.trackNameMap) {
+                        State.trackNameMap = await APIManager.fetchTrackData(apiKey);
+                    }
+                } catch (e) {
+                    historyFragment.appendChild(this.createPanelMessage('info-msg', `Track names unavailable: ${e.message}`));
                 }
-            });
+
+                try {
+                    const raceLimit = Math.max(20, Math.min(500, Number(Config.get('historicalRaceLimit')) || 100));
+                    const races = await APIManager.fetchHistoricalRaceData(apiKey, State.userId, raceLimit);
+                    raceEntries = races
+                        .map(race => this.normalizeHistoryRaceEntry(race, State.userId))
+                        .filter(Boolean);
+                } catch (e) {
+                    historyFragment.appendChild(this.createPanelMessage('error-msg', `Could not load race history: ${e.message}`));
+                }
+            } else {
+                historyFragment.appendChild(this.createPanelMessage('info-msg', 'Configure an API key to load race timeline and recent-races table.'));
+            }
+
+            historyFragment.appendChild(this.createHistoryDeltaCards(historyLog, raceEntries));
+            historyFragment.appendChild(this.createHistoryRaceTimeline(raceEntries));
+            historyFragment.appendChild(this.createSortableHistoryRacesTable(raceEntries));
+
+            if (State.historyPanelInstance !== popup || !document.body.contains(popup)) {
+                return;
+            }
+            historyContentDiv.replaceChildren(historyFragment);
         },
         createInfoPanel() {
             if (State.infoPanelInstance) State.infoPanelInstance.remove();

@@ -269,9 +269,13 @@
         .stats-content p { margin: 5px 0 10px 0; line-height: 1.5; color: #ccc; }
         .stats-content strong { color: var(--text-color); }
         .stats-content .loading-msg, .stats-content .error-msg, .stats-content .info-msg { padding: 10px; border-radius: 4px; margin: 15px 0; text-align: center; }
+        .history-content .loading-msg, .history-content .error-msg, .history-content .info-msg { padding: 10px; border-radius: 4px; margin: 15px 0; text-align: center; }
         .stats-content .loading-msg { background-color: rgba(170, 170, 170, 0.2); color: var(--api-loading-color); }
         .stats-content .error-msg { background-color: rgba(255, 138, 128, 0.2); color: var(--api-error-color); }
         .stats-content .info-msg { background-color: rgba(100, 181, 246, 0.2); color: var(--api-info-color); }
+        .history-content .loading-msg { background-color: rgba(170, 170, 170, 0.2); color: var(--api-loading-color); }
+        .history-content .error-msg { background-color: rgba(255, 138, 128, 0.2); color: var(--api-error-color); }
+        .history-content .info-msg { background-color: rgba(100, 181, 246, 0.2); color: var(--api-info-color); }
         .stats-content table { width: 100%; border-collapse: collapse; margin-top: 10px; margin-bottom: 20px; font-size: 0.95em; }
         .stats-content th, .stats-content td { border: 1px solid var(--border-color); padding: 6px 8px; text-align: left; }
         .stats-content th { background-color: var(--table-header-bg); font-weight: bold; color: var(--text-color); }
@@ -296,6 +300,25 @@
         .history-content .change-positive { color: #81C784; }
         .history-content .change-negative { color: #E57373; }
         .history-content .change-neutral { color: #90A4AE; }
+        .history-summary-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 16px; }
+        .history-summary-card { border: 1px solid var(--border-color); border-radius: 6px; background: var(--background-light); padding: 10px; }
+        .history-summary-label { font-size: 0.8em; color: #aaa; text-transform: uppercase; letter-spacing: 0.04em; }
+        .history-summary-value { margin-top: 4px; font-size: 1.1em; font-weight: 700; color: var(--text-color); }
+        .history-summary-value.positive { color: #81C784; }
+        .history-summary-value.negative { color: #E57373; }
+        .history-race-timeline { list-style: none; padding: 0; margin: 10px 0 18px 0; display: flex; flex-direction: column; gap: 8px; }
+        .history-race-item { border: 1px solid var(--border-color); border-radius: 6px; background: var(--background-light); padding: 8px 10px; }
+        .history-race-item.win { border-left: 4px solid #81C784; }
+        .history-race-item.crash { border-left: 4px solid #E57373; }
+        .history-race-main { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 4px; }
+        .history-race-track { font-weight: 600; color: var(--text-color); }
+        .history-race-result { font-weight: 600; color: #ccc; }
+        .history-race-skill { margin-left: auto; font-weight: 700; color: #bbb; }
+        .history-race-skill.positive { color: #81C784; }
+        .history-race-skill.negative { color: #E57373; }
+        .history-race-meta { font-size: 0.85em; color: #9ca4ad; }
+        .history-sort-btn { background: transparent; border: none; color: inherit; font: inherit; cursor: pointer; padding: 0; text-decoration: none; }
+        .history-sort-btn:hover { text-decoration: underline; }
         .settings-item { margin-bottom: 15px; display: flex; flex-direction: column; }
         .settings-item label:not(.switch) { margin-bottom: 8px; color: var(--text-color); font-weight: bold; display: block; }
         .settings-item .telemetry-options-group { display: flex; flex-direction: column; gap: 10px; margin-top: 5px; border: 1px solid var(--border-color); border-radius: 4px; padding: 10px; background: var(--background-light); }

@@ -49,6 +49,14 @@
             const jitter = Math.round(Math.random() * Math.max(250, baseDelay * 0.25));
             return backoffDelay + jitter;
         },
+        normalizeApiUrl(urlLike, base = 'https://api.torn.com') {
+            if (!urlLike || typeof urlLike !== 'string') return null;
+            try {
+                return new URL(urlLike, base).toString();
+            } catch (e) {
+                return null;
+            }
+        },
         async fetchJson(url, options = {}) {
             const response = await fetch(url, options);
             return this.parseJsonResponse(response);
@@ -164,10 +172,34 @@
             if (!apiKey) throw new Error("API Key required.");
             if (!userId) throw new Error("User ID required.");
 
-            const boundedLimit = Math.max(10, Math.min(1000, limit || 100));
-            const url = `https://api.torn.com/v2/user/races?key=${apiKey}&id=${userId}&cat=official&sort=DESC&limit=${boundedLimit}`;
-            const data = await this.fetchJson(url, { headers: { 'Accept': 'application/json' } });
-            return data.races || [];
+            const boundedLimit = Math.max(10, Math.min(5000, Number(limit) || 100));
+            const pageSize = Math.min(100, boundedLimit);
+            let nextUrl = `https://api.torn.com/v2/user/races?cat=official&sort=DESC&limit=${pageSize}`;
+            const allRaces = [];
+            const visitedUrls = new Set();
+
+            while (nextUrl && allRaces.length < boundedLimit) {
+                if (visitedUrls.has(nextUrl)) {
+                    break;
+                }
+                visitedUrls.add(nextUrl);
+
+                const data = await this.fetchWithAuthHeader(nextUrl, apiKey);
+                const pageRaces = Array.isArray(data?.races) ? data.races : [];
+                if (pageRaces.length === 0) {
+                    break;
+                }
+
+                allRaces.push(...pageRaces);
+                if (allRaces.length >= boundedLimit) {
+                    break;
+                }
+
+                const metadataLinks = data?._metadata?.links || {};
+                nextUrl = this.normalizeApiUrl(metadataLinks.next) || this.normalizeApiUrl(metadataLinks.prev);
+            }
+
+            return allRaces.slice(0, boundedLimit);
         },
         async fetchTrackRecords(apiKey, trackId, raceClass) { if (!trackId) throw new Error("Track ID required."); if (!raceClass) throw new Error("Race Class required."); const url = `https://api.torn.com/v2/racing/${trackId}/records?cat=${raceClass}`; const data = await this.fetchWithAuthHeader(url, apiKey); return data.records || []; }
     };
