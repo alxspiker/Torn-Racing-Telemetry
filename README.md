@@ -1,232 +1,167 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Torn Racing Telemetry README</title>
-    <!-- Basic styling for better readability -->
-    <style>
-        body { font-family: sans-serif; line-height: 1.6; padding: 20px; max-width: 900px; margin: auto; }
-        h1, h2, h3 { color: #333; }
-        h1 { text-align: center; border-bottom: 2px solid #eee; padding-bottom: 10px; }
-        h2 { border-bottom: 1px solid #eee; padding-bottom: 5px; margin-top: 30px; }
-        blockquote { border-left: 4px solid #ddd; padding-left: 15px; color: #555; font-style: italic; }
-        table { border-collapse: collapse; width: 100%; margin-bottom: 20px; }
-        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-        th { background-color: #f2f2f2; }
-        pre { background-color: #f9f9f9; border: 1px solid #ddd; padding: 10px; border-radius: 4px; white-space: pre-wrap; word-wrap: break-word; }
-        code { font-family: monospace; background: #eee; padding: 2px 4px; border-radius: 3px; }
-        img { max-width: 100%; height: auto; border-radius: 5px; display: block; margin: 15px auto; border: 2px solid #ddd; }
-        .center { text-align: center; }
-        .feature-table td { vertical-align: top; }
-        .success-text { color: #4CAF50; font-weight: bold; }
-        .danger-text { color: #F44336; font-weight: bold; }
-        .neutral-text { color: #888888; }
-        .api-required { font-size: 0.8em; color: #e67e22; font-style: italic; }
-        .whats-new-box { background-color: #e8f5e9; border: 1px solid #4CAF50; padding: 1px 20px; margin: 20px 0; border-radius: 5px; }
-        .whats-new-box h2 { color: #2e7d32; border-bottom: none; }
-        .whats-new-box ul { padding-left: 20px; }
-        .whats-new-box strong { color: #1b5e20; }
-    </style>
-</head>
-<body>
+# Torn Racing Telemetry
 
-<h1>🏎️ Torn Racing Telemetry</h1>
-<blockquote>
-    Enhance your Torn.com racing experience with a professional UI, highly accurate real-time telemetry, detailed stats analysis with charts, and personal history tracking.
-</blockquote>
-<hr>
+Enhance Torn racing with a cleaner leaderboard, realistic live telemetry, API-driven stats/history analysis, and race-result export tools.
 
-<div class="whats-new-box">
-    <h2>✨ What's New in v3.4.1 ✨</h2>
-    <ul>
-        <li><strong>🚀 Major Telemetry Engine Overhaul:</strong> The core calculation engine has been completely rebuilt. It now uses an advanced Exponential Moving Average (EMA) model for incredibly smooth and accurate Speed & Acceleration tracking, gracefully handling gaps in game data. Lap time estimates are now significantly more stable and predictive.</li>
-        <li><strong>🆔 Race ID Capture & Export:</strong> The script now identifies and includes the unique Race ID in all data exports, making it easier than ever to log and analyze specific races.</li>
-        <li><strong>⚡ API Caching & Reliability:</strong> Static data (track names, car stats) is now cached for 24 hours, drastically reducing API calls and making the Stats Panel load much faster. API requests are also more robust with a new auto-retry mechanism.</li>
-        <li><strong>📜 History Panel Export:</strong> You can now export your entire racing progression log (skill, class, points) directly from the History Panel.</li>
-    </ul>
-</div>
+## What's New in v3.5.0
 
-<h2>📋 Table of Contents</h2>
-<ul>
-    <li><a href="#overview">Overview</a></li>
-    <li><a href="#key-features">Key Features</a></li>
-    <li><a href="#enhanced-driver-list">Enhanced Driver List & Telemetry</a></li>
-    <li><a href="#advanced-stats-panel">Advanced Stats Panel</a></li>
-    <li><a href="#history-panel">History Panel</a></li>
-    <li><a href="#settings-panel">Settings & Customization</a></li>
-    <li><a href="#api-tos">API Usage & Data Privacy (ToS)</a></li>
-    <li><a href="#installation">Installation</a></li>
-    <li><a href="#faq">FAQ</a></li>
-</ul>
-<hr>
+- Migrated to a modular source layout with a single-file build output for userscript deployment.
+- Replaced chart-based history/stats views with fast API-first cards, timeline, and sortable tables.
+- Added true paginated official-race ingestion via `/user/races` links.
+- Redesigned expanded driver dropdown cards (desktop/mobile) and improved telemetry animation behavior.
+- Reduced dead code and cleaned stale legacy paths.
 
-<h2 id="overview">Overview</h2>
-<p>
-    <strong>Torn Racing Telemetry</strong> is a comprehensive userscript designed to significantly enhance the racing feature in Torn. It replaces the standard leaderboard with a dynamic, feature-rich interface, providing highly accurate real-time telemetry, detailed driver statistics, advanced race performance analysis with charts, and personal racing skill/points history tracking. It integrates seamlessly into the Torn racing page, offering valuable insights to give you a competitive edge.
-</p>
-<p>
-    <strong>Version:</strong> See the GreasyFork page for the latest version.<br>
-    <strong>Author:</strong> TheProgrammer [<a href="https://www.torn.com/profiles.php?XID=2782979" target="_blank" rel="noopener noreferrer">2782979</a>]
-</p>
+## Table of Contents
 
-<h2 id="key-features">Key Features</h2>
-<table class="feature-table">
-    <thead>
-        <tr>
-            <th>📊 Enhanced UI & Telemetry</th>
-            <th>📈 Data & Analysis</th>
-            <th>⚙️ Tracking & Configuration</th>
-        </tr>
-    </thead>
-    <tbody>
-        <tr>
-            <td>
-                <ul>
-                    <li><strong>Accurate Real-time Telemetry:</strong> Highly smoothed Speed, Acceleration, & Est. Lap Times using an advanced prediction model.</li>
-                    <li><strong>Customizable Display:</strong> Choose units (mph/kmh), data points, color-coding, and animations.</li>
-                    <li><strong>Enhanced Driver List:</strong> Optional replacement for Torn's list, always sorted by position.</li>
-                    <li><strong>Click-to-View Details:</strong> Expand driver entries for detailed status, lap progress, and calculated metrics.</li>
-                    <li><strong>Color Indicators:</strong> Quickly see driver position, status (racing, finished, crashed), and podium finishes.</li>
-                </ul>
-            </td>
-            <td>
-                <ul>
-                    <li><strong>Driver API Stats:</strong> View Racing Skill, Points, Win Rate etc. on click <span class="api-required">(Requires API Key)</span>.</li>
-                    <li><strong>Advanced Stats Panel:</strong> In-depth analysis of your historical race performance <span class="api-required">(Requires API Key)</span>.</li>
-                    <li><strong>Track & Car Analysis:</strong> View records, win/podium/crash rates, and analyze top-performing cars <span class="api-required">(Requires API Key)</span>.</li>
-                    <li><strong>Interactive Charts:</strong> Visualize performance trends for tracks, cars, and personal skill progression.</li>
-                    <li><strong>Efficient API Usage:</strong> Caching for track/car data reduces load times and API call frequency.</li>
-                </ul>
-            </td>
-             <td>
-                <ul>
-                    <li><strong>History Panel:</strong> Automatically logs changes in your Racing Skill, Class, and Points over time <span class="api-required">(API Key required for Points)</span>.</li>
-                    <li><strong>Race ID Capture:</strong> Tags each race with a unique ID for better logging and exporting.</li>
-                    <li><strong>Race Results Export:</strong> Download or copy final race results in various formats (HTML, CSV, JSON, Markdown, Text).</li>
-                    <li><strong>History Export:</strong> Download your full skill/points progression from the History Panel.</li>
-                    <li><strong>Fully Configurable:</strong> Fine-tune every aspect of the script through the modern settings panel.</li>
-                </ul>
-            </td>
-        </tr>
-    </tbody>
-</table>
+- [Overview](#overview)
+- [Key Features](#key-features)
+- [Enhanced Driver List](#enhanced-driver-list)
+- [History Panel](#history-panel)
+- [Stats Panel](#stats-panel)
+- [Export Panel](#export-panel)
+- [Settings Panel](#settings-panel)
+- [API Usage and Privacy](#api-usage-and-privacy)
+- [Installation](#installation)
+- [FAQ](#faq)
 
-<h2 id="enhanced-driver-list">Enhanced Driver List & Telemetry</h2>
-<p>When enabled (default), the script hides Torn's default leaderboard and presents its own dynamic list, complete with telemetry data. Clicking on any driver expands their entry to show a detailed stats panel.</p>
-<a href="https://i.imgur.com/aaDsapG.jpeg" target="_blank" rel="noopener noreferrer"><img src="https://i.imgur.com/aaDsapG.jpeg" alt="Enhanced UI with Telemetry"></a>
-<a href="https://i.imgur.com/deg0hK0.jpeg" target="_blank" rel="noopener noreferrer"><img src="https://i.imgur.com/deg0hK0.jpeg" alt="Expanded Driver Details"></a>
-<p><strong>Understanding the Telemetry:</strong></p>
-<ul>
-    <li><strong>Speed:</strong> Current calculated speed in your chosen unit (mph or km/h).</li>
-    <li><strong>Acceleration:</strong> Calculated g-forces. Positive (<span class="success-text">green</span>) for acceleration, negative (<span class="danger-text">red</span>) for braking/deceleration, <span class="neutral-text">grey</span> for neutral speed.</li>
-    <li><strong>Est. Lap Time:</strong> (Optional) A stable, predictive time remaining for the current lap, shown in parentheses <span class="neutral-text">(~X:XX)</span>.</li>
-    <li><strong>Status Icons:</strong> 🥇 🥈 🥉 for podium, 🏁 for finished, and 💥 for crashed.</li>
-</ul>
+## Overview
 
-<h2 id="advanced-stats-panel">Advanced Stats Panel</h2>
-<p>Accessible via the '📊 Stats' button <span class="api-required">(Requires API Key)</span>, this panel provides deep insights into your racing performance based on your recent official race history. It loads faster than ever thanks to intelligent data caching.</p>
-<a href="https://i.imgur.com/ucVqpN3.jpeg" target="_blank" rel="noopener noreferrer"><img src="https://i.imgur.com/ucVqpN3.jpeg" alt="Advanced Stats Panel"></a>
-<ul>
-    <li><strong>Overall Performance Summary:</strong> Win rate, podium rate, crash rate, and more.</li>
-    <li><strong>Performance by Track & Car:</strong> Tables and charts showing your stats for each track and car you've raced.</li>
-    <li><strong>Current Track Analysis:</strong> View track records, analyze top-performing cars, and see stats for your currently selected car.</li>
-</ul>
+Torn Racing Telemetry replaces Torn's default race list with a telemetry-first interface and adds API-powered analysis panels. It is designed for practical race-day usage: fast reads, clear comparisons, and easy export.
 
-<h2 id="history-panel">History Panel</h2>
-<p>Accessed via the '📜 History' button, this panel tracks your long-term racing progression.</p>
-<ul>
-    <li>Logs entries whenever a change in your Racing Skill or Class is detected.</li>
-    <li>If an API key is provided, it also periodically checks and logs your Racing Points.</li>
-    <li>Includes an interactive line chart visualizing your Skill and Points progression over time.</li>
-    <li>Features an 'Export' button to download your entire progression history.</li>
-</ul>
+- Author: TheProgrammer ([2782979](https://www.torn.com/profiles.php?XID=2782979))
+- Distribution: final bundled userscript (`tornracingtelemetry.js`)
+- Compatibility: browser userscript managers and Torn PDA flow
 
-<h2 id="settings-panel">Settings & Customization</h2>
-<p>The '⚙ Settings' button opens a panel allowing full customization of the script's features.</p>
-<a href="https://i.imgur.com/llhZVjY.jpeg" target="_blank" rel="noopener noreferrer"><img src="https://i.imgur.com/llhZVjY.jpeg" alt="Settings Panel"></a>
-<ul>
-    <li>Toggling the History and Stats panels on or off.</li>
-    <li>Customizing the telemetry display (speed, acceleration, units, animations).</li>
-    <li>Managing your Torn API Key for advanced features.</li>
-    <li>Configuring data limits and check intervals for history logging and stats analysis.</li>
-    <li>Toggling the enhanced driver list.</li>
-</ul>
+## Key Features
 
-<h2 id="api-tos">API Usage & Data Privacy (Terms of Service)</h2>
-<p>This script is designed with your privacy and security as its top priority. In compliance with Torn's API usage policies, here is a transparent breakdown of how your API key and data are handled:</p>
-<table>
-    <thead>
-        <tr>
-            <th>Data Storage</th>
-            <th>Data Sharing</th>
-            <th>Purpose of Use</th>
-            <th>Key Storage & Sharing</th>
-            <th>Key Access Level</th>
-        </tr>
-    </thead>
-    <tbody>
-        <tr>
-            <td><strong>Only locally</strong></td>
-            <td><strong>Nobody</strong></td>
-            <td><strong>Non-malicious statistical analysis</strong></td>
-            <td><strong>Stored locally / Not shared</strong></td>
-            <td><strong>Custom Selections.</strong> A 'Limited Access' key is sufficient. Required selections are: <code>user (personalstats, races)</code> and <code>racing (tracks, cars, records)</code>.</td>
-        </tr>
-    </tbody>
-</table>
-<p><strong>In simple terms:</strong> Your API key and any data fetched with it are stored <strong>only on your own computer</strong> within your browser's secure storage for userscripts. The data is never sent to, shared with, or stored by the script author or any third party.</p>
+### Enhanced UI and Telemetry
 
+- Optional replacement of Torn's leaderboard with always-sorted custom list.
+- Live speed, acceleration, and optional progress display.
+- Color-coded telemetry by acceleration/deceleration.
+- Expandable per-driver detail cards with lap metrics and API racing stats.
 
-<h2 id="installation">Installation</h2>
-<ol>
-    <li>
-        <strong>Install a Userscript Manager:</strong> If you don't have one, install a browser extension like <a href="https://www.tampermonkey.net/" target="_blank" rel="noopener noreferrer">Tampermonkey</a> or <a href="https://violentmonkey.github.io/" target="_blank" rel="noopener noreferrer">Violentmonkey</a>.
-    </li>
-    <li>
-        <strong>Install the Script:</strong> Click the link below and your userscript manager should prompt you to install:
-        <p class="center" style="margin: 15px 0;">
-            <a href="https://greasyfork.org/en/scripts/522245-torn-racing-telemetry" target="_blank" rel="noopener noreferrer" style="font-size: 1.1em; padding: 10px 20px; background-color: #4CAF50; color: white; text-decoration: none; border-radius: 5px;">Install Torn Racing Telemetry from GreasyFork</a>
-        </p>
-    </li>
-    <li>
-        <strong>Configure (Optional but Recommended):</strong>
-        <ul>
-            <li>Navigate to any Torn racing page.</li>
-            <li>Click the '⚙ Settings' button added by the script.</li>
-            <li>Enter your Torn API Key (Limited Access recommended) to enable the Advanced Stats and full History features.</li>
-            <li><strong>For Torn PDA Users:</strong> The script will automatically detect the app and configure the API key for you. No manual entry is needed!</li>
-        </ul>
-    </li>
-</ol>
+### Data and Analysis
 
+- Stats panel with summary cards, comparison windows, and sortable track/car/race tables.
+- History panel with summary cards, race-event timeline, and sortable recent-races table.
+- Track and car static-data caching for faster panel loads.
+- Comparison metrics tuned for limited-history windows (no hard 40-race requirement).
 
-<h2 id="faq">FAQ</h2>
-<dl>
-    <dt><strong>Does this script violate Torn's rules?</strong></dt>
-    <dd>No. The script enhances the user interface and uses the official Torn API for data retrieval as intended. It fully complies with Torn's policies on scripting and API usage.</dd>
+### Export and Configuration
 
-    <dt><strong>Is my API key safe?</strong></dt>
-    <dd><strong>Yes.</strong> Your API key is stored locally in your browser's secure userscript storage. It is ONLY sent directly to the official Torn API (<code>api.torn.com</code>). For full details, please see the <a href="#api-tos">API Usage & Data Privacy</a> section above.</dd>
-    
-    <dt><strong>How accurate is the telemetry data now?</strong></dt>
-    <dd>As of v3.4, the telemetry engine is significantly more accurate. It uses an advanced Exponential Moving Average (EMA) model to smooth data and predict values during game update lags. While it's still an estimation based on the visible progress bar, it provides a very stable and realistic comparison between drivers.</dd>
+- Export final race results as HTML, Markdown, CSV, TXT, or JSON.
+- Copy exported race data to clipboard.
+- Full settings panel for telemetry, animation, smoothing, API behavior, and UI toggles.
+- Torn PDA API-key placeholder auto-setup support.
 
-    <dt><strong>What is the new "Race ID"?</strong></dt>
-    <dd>The Race ID is a unique number that Torn assigns to every race. The script now captures this ID and includes it in your exported race data. This is useful for keeping a perfect log of your races, as you can uniquely identify every single result.</dd>
-    
-    <dt><strong>Why do I need an API key?</strong></dt>
-    <dd>An API key is needed to fetch data specific to your account or detailed game information not available directly on the race page. The core telemetry display works without a key, but for the best experience (Advanced Stats, full History Tracking), a key is required.</dd>
-    
-    <dt><strong>The script isn't working after an update. What should I do?</strong></dt>
-    <dd>First, try a hard refresh of the page (Ctrl+Shift+R or Cmd+Shift+R). If that doesn't work, go to the script's Settings panel and use the "Clear Script Data" button (this keeps your API key). If problems persist, contact the author.</dd>
-</dl>
-<hr>
+## Enhanced Driver List
 
-<div class="center">
-    <h3>Torn Racing Telemetry</h3>
-    <p>Provided under the MIT License. This script is not affiliated with or endorsed by Torn Ltd.</p>
-    <p>For updates, bug reports, or feature requests, please visit the script's page on <a href="https://greasyfork.org/en/scripts/522245-torn-racing-telemetry" target="_blank" rel="noopener noreferrer">Greasy Fork</a> or contact the author.</p>
-</div>
+The collapsed list keeps race order and top-line telemetry easy to scan.
 
-</body>
-</html>
+![Enhanced Driver List (Collapsed)](imgs/leaderboard_closed.png)
+
+Expanding a driver shows status, lap/progress cards, calculated speed/accel, estimate data, and API racing stats.
+
+![Enhanced Driver Details (Expanded)](imgs/leaderboard_open.png)
+
+Telemetry color semantics:
+
+- Green: positive acceleration.
+- Red: braking/deceleration.
+- Neutral: low/near-zero acceleration.
+
+## History Panel
+
+The History panel loads official races from the API on open and renders summary cards plus timeline/table views.
+
+![History Panel](imgs/history_panel.png)
+
+Highlights:
+
+- Window comparison cards (`Last N vs Prev N`) for position trends.
+- Average skill-per-race metric across loaded history.
+- Race timeline for quick event review.
+- Sortable recent-races table for detailed inspection.
+
+## Stats Panel
+
+The Stats panel focuses on performance analytics and breakdowns from official race history.
+
+![Stats Panel](imgs/stats_panel.png)
+
+Highlights:
+
+- Performance snapshot cards (wins, podiums, rates, best lap, etc.).
+- Window-based deltas for position/win/crash/lap behavior.
+- Track breakdown table and car breakdown table.
+- Recent official races table with sortable columns.
+
+## Export Panel
+
+Export final race results in multiple formats or copy the output directly.
+
+![Export Panel](imgs/export_panel.png)
+
+Available formats:
+
+- HTML Table
+- Markdown Table
+- CSV
+- Plain Text
+- JSON
+
+## Settings Panel
+
+Configure all major behavior from one place.
+
+![Settings Panel](imgs/settings_panel.png)
+
+Main controls:
+
+- Enable/disable History and Stats panels.
+- Telemetry display options (speed, acceleration, progress).
+- Speed unit, color coding, animation toggle, smoothing values.
+- API key, API stats-on-click toggle, and race analysis limit.
+- Hide/show Torn's original leaderboard.
+
+## API Usage and Privacy
+
+This script stores settings and API key locally in userscript storage and only sends API requests to Torn's official API.
+
+| Item | Behavior |
+|---|---|
+| Data storage | Local only |
+| Data sharing | None |
+| API destination | `api.torn.com` only |
+| Typical key level | Limited Access (custom selections) |
+| Required selections | `user (personalstats, races)`, `racing (tracks, cars, records)` |
+
+## Installation
+
+1. Install a userscript manager (Tampermonkey or Violentmonkey).
+2. Install the script from GreasyFork: <https://greasyfork.org/en/scripts/522245-torn-racing-telemetry>
+3. Open Torn racing page and configure settings.
+4. Add API key for full Stats/History/driver API features.
+5. Torn PDA users can use the managed placeholder flow (`###PDA-APIKEY###`).
+
+## FAQ
+
+### Does this break Torn rules?
+
+No. It is a UI enhancement script using Torn's public API endpoints.
+
+### Is my API key safe?
+
+The key is stored locally in userscript storage and used only for Torn API requests.
+
+### Why do I need an API key?
+
+Core on-page telemetry works without it, but Stats panel, History panel, and per-driver API stats require it.
+
+### Why can Avg Pos Delta be red when it is positive?
+
+Because lower finishing position is better. A positive delta means average finishing position number increased (worse performance).
+
+### What if the script looks stale after update?
+
+Hard refresh the page first. If needed, use Settings -> Clear Script Data.

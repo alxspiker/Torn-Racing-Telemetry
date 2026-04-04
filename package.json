@@ -1,0 +1,7 @@
+{
+  "name": "torn-racing-telemetry",
+  "private": true,
+  "scripts": {
+    "build": "node scripts/build-userscript.mjs"
+  }
+}
