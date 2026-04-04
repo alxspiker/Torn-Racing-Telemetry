@@ -9,71 +9,147 @@
 
             const displayOptions = Config.get('telemetryDisplayOptions');
 
-            content.innerHTML = `
-                <div class="settings-title">Telemetry & UI Settings <button class="settings-close">&times;</button></div>
-                <div class="settings-content">
-                    <div class="settings-item"> <div class="toggle-container"> <label for="historyEnabled">Enable History Panel & Logging</label> <label class="switch"> <input type="checkbox" id="historyEnabled"> <span class="slider"></span> </label> </div> </div>
-                    <div class="settings-item"> <div class="toggle-container"> <label for="statsPanelEnabled">Enable Stats Panel</label> <label class="switch"> <input type="checkbox" id="statsPanelEnabled"> <span class="slider"></span> </label> </div> </div>
-                    <hr style="border: none; border-top: 1px solid var(--border-color); margin: 20px 0;">
-                    <div class="settings-item">
-                         <label>Telemetry Display Options:</label>
-                         <div class="telemetry-options-group">
-                            <div class="toggle-container"> <label for="telemetryShowSpeed">Show Speed</label> <label class="switch"> <input type="checkbox" id="telemetryShowSpeed"> <span class="slider"></span> </label> </div>
-                            <div class="toggle-container"> <label for="telemetryShowAcceleration">Show Acceleration</label> <label class="switch"> <input type="checkbox" id="telemetryShowAcceleration"> <span class="slider"></span> </label> </div>
-                            <div class="toggle-container"> <label for="telemetryShowProgress">Show Progress %</label> <label class="switch"> <input type="checkbox" id="telemetryShowProgress"> <span class="slider"></span> </label> </div>
-                         </div>
-                    </div>
-                    <div class="settings-item"> <label for="speedUnit">Speed Unit</label> <select id="speedUnit"> <option value="mph">mph</option> <option value="kmh">km/h</option> </select> </div>
-                    <div class="settings-item"> <div class="toggle-container"> <label for="colorCode">Color Code Telemetry (by Accel)</label> <label class="switch"> <input type="checkbox" id="colorCode"> <span class="slider"></span> </label> </div> </div>
-                    <div class="settings-item"> <div class="toggle-container"> <label for="animateChanges">Animate Changes (Simple Cases)</label> <label class="switch"> <input type="checkbox" id="animateChanges"> <span class="slider"></span> </label> </div> <small style="color: #aaa; margin-top: 5px;">Animation only applies if just Speed, just Accel, or only Speed & Accel are shown. Uses capped duration.</small></div>
-                    <div class="settings-item"> <label for="speedSmoothingFactor">Speed Smoothing Factor (0.1-0.9)</label> <input type="number" id="speedSmoothingFactor" min="0.1" max="0.9" step="0.1"> <small style="color: #aaa; margin-top: 5px;">Weight of *previous* speed vs. new calculation (higher = smoother). Default: ${Config.defaults.speedSmoothingFactor}</small></div>
-                    <div class="settings-item"> <label for="maxAnimationDurationMs">Max Animation Duration (ms)</label> <input type="number" id="maxAnimationDurationMs" min="100" max="3000" step="100"> <small style="color: #aaa; margin-top: 5px;">Caps animation time for large update gaps. Default: ${Config.defaults.maxAnimationDurationMs}</small></div>
-                    <div class="settings-item"> <div class="toggle-container"> <label for="showLapEstimate">Show Est. Lap Time</label> <label class="switch"> <input type="checkbox" id="showLapEstimate"> <span class="slider"></span> </label> </div> </div>
-                    <div class="settings-item"> <label for="lapEstimateSmoothingFactor">Lap Est. Smoothing (0.01-1.0)</label> <input type="number" id="lapEstimateSmoothingFactor" min="0.01" max="1.0" step="0.01"> </div>
-                    <hr style="border: none; border-top: 1px solid var(--border-color); margin: 20px 0;">
-                    <div class="settings-item"> <div class="toggle-container"> <label for="fetchApiStatsOnClick">Load Driver API Stats on Click</label> <label class="switch"> <input type="checkbox" id="fetchApiStatsOnClick"> <span class="slider"></span> </label> </div> <small style="color: #aaa; margin-top: 5px;">(Requires API key)</small> </div>
-                    <div class="api-tos-container">
-                        <p><strong>API Key Usage (ToS):</strong> This script stores your key and data locally in your browser only. It is never shared. Please expand the details below for full compliance information.</p>
-                        <details>
-                            <summary>View API Usage Details (Torn ToS)</summary>
-                            <table>
-                                <thead>
-                                    <tr>
-                                        <th>Data Storage</th>
-                                        <th>Data Sharing</th>
-                                        <th>Purpose of Use</th>
-                                        <th>Key Storage & Sharing</th>
-                                        <th>Key Access Level</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <tr>
-                                        <td>Only locally</td>
-                                        <td>Nobody</td>
-                                        <td>Non-malicious statistical analysis</td>
-                                        <td>Stored locally / Not shared</td>
-                                        <td>Custom selections: <code>user (personalstats, races)</code>, <code>racing (tracks, cars, records)</code>. A 'Limited Access' key is sufficient.</td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </details>
-                    </div>
-                    <div class="settings-item"> <label for="apiKey">Torn API Key (Limited Access Recommended)</label> <input type="password" id="apiKey" placeholder="Enter API Key or use '###PDA-APIKEY###' in Torn PDA"> </div>
-                    <div class="settings-item"> <label for="historicalRaceLimit">Advanced Stats: Races to Analyze</label> <input type="number" id="historicalRaceLimit" min="10" max="1000" step="10"> </div>
-                    <hr style="border: none; border-top: 1px solid var(--border-color); margin: 20px 0;">
-                    <div class="settings-item"> <label for="historyCheckInterval">History: Check Interval (ms)</label> <input type="number" id="historyCheckInterval" min="5000" max="60000" step="1000"> </div>
-                    <div class="settings-item"> <label for="historyLogLimit">History: Max Log Entries</label> <input type="number" id="historyLogLimit" min="5" max="50" step="1"> </div>
-                    <hr style="border: none; border-top: 1px solid var(--border-color); margin: 20px 0;">
-                    <div class="settings-item"> <div class="toggle-container"> <label for="hideOriginalList">Hide Torn's Leaderboard</label> <label class="switch"> <input type="checkbox" id="hideOriginalList"> <span class="slider"></span> </label> </div> </div>
-                    <div class="settings-buttons">
-                         <button class="settings-btn toggle-telemetry-btn">Toggle Telemetry</button>
-                         <button class="settings-btn primary" id="saveSettings">Save & Close</button>
-                    </div>
-                    <div class="settings-data-buttons">
-                         <button class="settings-btn danger" id="clearData">Clear Script Data</button>
-                         <button class="settings-btn danger" id="clearApiKey">Clear API Key</button>
-                    </div>
-                </div>`;
+            const createDivider = () => Utils.createElement('hr', {
+                attrs: { style: 'border: none; border-top: 1px solid var(--border-color); margin: 20px 0;' }
+            });
+            const createToggleControl = (id, labelText) => {
+                const container = Utils.createElement('div', { className: 'toggle-container' });
+                const label = Utils.createElement('label', { attrs: { for: id }, text: labelText });
+                const switchLabel = Utils.createElement('label', { className: 'switch' });
+                const input = Utils.createElement('input', { attrs: { type: 'checkbox', id } });
+                const slider = Utils.createElement('span', { className: 'slider' });
+                switchLabel.append(input, slider);
+                container.append(label, switchLabel);
+                return container;
+            };
+            const createSettingsItem = ({ labelText = null, control = null, helpText = null }) => {
+                const item = Utils.createElement('div', { className: 'settings-item' });
+                if (labelText) {
+                    item.appendChild(Utils.createElement('label', { text: labelText }));
+                }
+                if (control) {
+                    item.appendChild(control);
+                }
+                if (helpText) {
+                    item.appendChild(Utils.createElement('small', {
+                        attrs: { style: 'color: #aaa; margin-top: 5px;' },
+                        text: helpText
+                    }));
+                }
+                return item;
+            };
+
+            const titleRow = Utils.createElement('div', { className: 'settings-title' });
+            titleRow.append('Telemetry & UI Settings ');
+            titleRow.appendChild(Utils.createElement('button', { className: 'settings-close', text: '\u00D7' }));
+
+            const settingsContent = Utils.createElement('div', { className: 'settings-content' });
+            settingsContent.appendChild(createSettingsItem({ control: createToggleControl('historyEnabled', 'Enable History Panel & Logging') }));
+            settingsContent.appendChild(createSettingsItem({ control: createToggleControl('statsPanelEnabled', 'Enable Stats Panel') }));
+            settingsContent.appendChild(createDivider());
+
+            const telemetryGroup = Utils.createElement('div', { className: 'telemetry-options-group' });
+            telemetryGroup.appendChild(createToggleControl('telemetryShowSpeed', 'Show Speed'));
+            telemetryGroup.appendChild(createToggleControl('telemetryShowAcceleration', 'Show Acceleration'));
+            telemetryGroup.appendChild(createToggleControl('telemetryShowProgress', 'Show Progress %'));
+            settingsContent.appendChild(createSettingsItem({ labelText: 'Telemetry Display Options:', control: telemetryGroup }));
+
+            const speedUnitSelect = Utils.createElement('select', { attrs: { id: 'speedUnit' } });
+            speedUnitSelect.append(
+                Utils.createElement('option', { attrs: { value: 'mph' }, text: 'mph' }),
+                Utils.createElement('option', { attrs: { value: 'kmh' }, text: 'km/h' })
+            );
+            settingsContent.appendChild(createSettingsItem({ labelText: 'Speed Unit', control: speedUnitSelect }));
+            settingsContent.appendChild(createSettingsItem({ control: createToggleControl('colorCode', 'Color Code Telemetry (by Accel)') }));
+            settingsContent.appendChild(createSettingsItem({
+                control: createToggleControl('animateChanges', 'Animate Changes (Simple Cases)'),
+                helpText: 'Animation only applies if just Speed, just Accel, or only Speed & Accel are shown. Uses capped duration.'
+            }));
+
+            settingsContent.appendChild(createSettingsItem({
+                labelText: 'Speed Smoothing Factor (0.1-0.9)',
+                control: Utils.createElement('input', { attrs: { type: 'number', id: 'speedSmoothingFactor', min: '0.1', max: '0.9', step: '0.1' } }),
+                helpText: `Weight of *previous* speed vs. new calculation (higher = smoother). Default: ${Config.defaults.speedSmoothingFactor}`
+            }));
+            settingsContent.appendChild(createSettingsItem({
+                labelText: 'Max Animation Duration (ms)',
+                control: Utils.createElement('input', { attrs: { type: 'number', id: 'maxAnimationDurationMs', min: '100', max: '3000', step: '100' } }),
+                helpText: `Caps animation time for large update gaps. Default: ${Config.defaults.maxAnimationDurationMs}`
+            }));
+            settingsContent.appendChild(createSettingsItem({ control: createToggleControl('showLapEstimate', 'Show Est. Lap Time') }));
+            settingsContent.appendChild(createSettingsItem({
+                labelText: 'Lap Est. Smoothing (0.01-1.0)',
+                control: Utils.createElement('input', { attrs: { type: 'number', id: 'lapEstimateSmoothingFactor', min: '0.01', max: '1.0', step: '0.01' } })
+            }));
+            settingsContent.appendChild(createDivider());
+
+            settingsContent.appendChild(createSettingsItem({
+                control: createToggleControl('fetchApiStatsOnClick', 'Load Driver API Stats on Click'),
+                helpText: '(Requires API key)'
+            }));
+            const tosContainer = Utils.createElement('div', { className: 'api-tos-container' });
+            tosContainer.innerHTML = `
+                <p><strong>API Key Usage (ToS):</strong> This script stores your key and data locally in your browser only. It is never shared. Please expand the details below for full compliance information.</p>
+                <details>
+                    <summary>View API Usage Details (Torn ToS)</summary>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Data Storage</th>
+                                <th>Data Sharing</th>
+                                <th>Purpose of Use</th>
+                                <th>Key Storage & Sharing</th>
+                                <th>Key Access Level</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>Only locally</td>
+                                <td>Nobody</td>
+                                <td>Non-malicious statistical analysis</td>
+                                <td>Stored locally / Not shared</td>
+                                <td>Custom selections: <code>user (personalstats, races)</code>, <code>racing (tracks, cars, records)</code>. A 'Limited Access' key is sufficient.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </details>`;
+            settingsContent.appendChild(tosContainer);
+
+            settingsContent.appendChild(createSettingsItem({
+                labelText: 'Torn API Key (Limited Access Recommended)',
+                control: Utils.createElement('input', { attrs: { type: 'password', id: 'apiKey', placeholder: "Enter API Key or use '###PDA-APIKEY###' in Torn PDA" } })
+            }));
+            settingsContent.appendChild(createSettingsItem({
+                labelText: 'Advanced Stats: Races to Analyze',
+                control: Utils.createElement('input', { attrs: { type: 'number', id: 'historicalRaceLimit', min: '10', max: '1000', step: '10' } })
+            }));
+            settingsContent.appendChild(createDivider());
+            settingsContent.appendChild(createSettingsItem({
+                labelText: 'History: Check Interval (ms)',
+                control: Utils.createElement('input', { attrs: { type: 'number', id: 'historyCheckInterval', min: '5000', max: '60000', step: '1000' } })
+            }));
+            settingsContent.appendChild(createSettingsItem({
+                labelText: 'History: Max Log Entries',
+                control: Utils.createElement('input', { attrs: { type: 'number', id: 'historyLogLimit', min: '5', max: '50', step: '1' } })
+            }));
+            settingsContent.appendChild(createDivider());
+            settingsContent.appendChild(createSettingsItem({ control: createToggleControl('hideOriginalList', "Hide Torn's Leaderboard") }));
+
+            const settingsButtons = Utils.createElement('div', { className: 'settings-buttons' });
+            settingsButtons.append(
+                Utils.createElement('button', { className: 'settings-btn toggle-telemetry-btn', text: 'Toggle Telemetry' }),
+                Utils.createElement('button', { className: 'settings-btn primary', attrs: { id: 'saveSettings' }, text: 'Save & Close' })
+            );
+            settingsContent.appendChild(settingsButtons);
+
+            const dataButtons = Utils.createElement('div', { className: 'settings-data-buttons' });
+            dataButtons.append(
+                Utils.createElement('button', { className: 'settings-btn danger', attrs: { id: 'clearData' }, text: 'Clear Script Data' }),
+                Utils.createElement('button', { className: 'settings-btn danger', attrs: { id: 'clearApiKey' }, text: 'Clear API Key' })
+            );
+            settingsContent.appendChild(dataButtons);
+
+            content.append(titleRow, settingsContent);
 
             content.querySelector('#historyEnabled').checked = Config.get('historyEnabled');
             content.querySelector('#statsPanelEnabled').checked = Config.get('statsPanelEnabled');
@@ -782,42 +858,94 @@
             historyContentDiv.className = 'history-content';
 
             const historyLog = HistoryManager.getLog();
-            let chartHTML = '';
-            let tableHTML = '';
+            const panelContentFragment = document.createDocumentFragment();
 
-            if (historyLog.length === 0) {
-                historyContentDiv.innerHTML = '<p class="no-history-msg">No historical changes recorded yet.</p>';
-            } else {
-                if (historyLog.length > 1 && typeof Chart !== 'undefined') {
-                    chartHTML = '<div class="history-chart-container"><canvas id="historyProgressionChart" style="max-height: 250px;"></canvas></div>';
-                } else if (historyLog.length <= 1) {
-                    chartHTML = '<p class="no-history-msg">Need at least two data points for a chart.</p>';
-                } else {
-                    chartHTML = '<p class="no-history-msg">Charting library not loaded.</p>';
+            const formatHistoryChangeNode = (value, change, decimals = 2) => {
+                if (value === null) {
+                    return document.createTextNode('N/A');
+                }
+                const formattedValue = typeof value === 'number'
+                    ? value.toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
+                    : String(value);
+                if (change === 0 || isNaN(change) || change === null) {
+                    return document.createTextNode(formattedValue);
                 }
 
-                const formatChange = (value, change, decimals = 2) => {
-                    if (value === null) return 'N/A';
-                    const formattedValue = typeof value === 'number'
-                        ? value.toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
-                        : value;
-                    if (change === 0 || isNaN(change) || change === null) return formattedValue;
-                    const isIncrease = change > 0;
-                    const sign = isIncrease ? '+' : '';
-                    const changeClass = isIncrease ? 'change-positive' : 'change-negative';
-                    const formattedChange = typeof change === 'number'
-                        ? change.toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
-                        : change;
-                    return `${formattedValue} <span class="change-indicator ${changeClass}">(${sign}${formattedChange})</span>`;
-                };
-                const formatClassChange = (currentClass, previousClass) => {
-                    if (currentClass === null) return 'N/A';
-                    if (!previousClass || currentClass === previousClass || previousClass === null) return currentClass;
-                    return `${currentClass} <span class="change-indicator change-neutral">(was ${previousClass})</span>`;
-                };
+                const isIncrease = change > 0;
+                const sign = isIncrease ? '+' : '';
+                const changeClass = isIncrease ? 'change-positive' : 'change-negative';
+                const formattedChange = typeof change === 'number'
+                    ? change.toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
+                    : String(change);
+                const fragment = document.createDocumentFragment();
+                fragment.append(formattedValue);
+                fragment.append(' ');
+                fragment.appendChild(Utils.createElement('span', {
+                    className: `change-indicator ${changeClass}`,
+                    text: `(${sign}${formattedChange})`
+                }));
+                return fragment;
+            };
+            const formatHistoryClassNode = (currentClass, previousClass) => {
+                if (currentClass === null) {
+                    return document.createTextNode('N/A');
+                }
+                if (!previousClass || currentClass === previousClass) {
+                    return document.createTextNode(currentClass);
+                }
+                const fragment = document.createDocumentFragment();
+                fragment.append(currentClass);
+                fragment.append(' ');
+                fragment.appendChild(Utils.createElement('span', {
+                    className: 'change-indicator change-neutral',
+                    text: `(was ${previousClass})`
+                }));
+                return fragment;
+            };
 
-                tableHTML = `<h3>History Log (Last ${historyLog.length})</h3><table><thead><tr><th>Date & Time</th><th class="numeric">Skill</th><th class="numeric">Class</th><th class="numeric">Points</th></tr></thead><tbody>`;
-                for (let i = 0; i < historyLog.length; i++) {
+            if (historyLog.length === 0) {
+                panelContentFragment.appendChild(Utils.createElement('p', {
+                    className: 'no-history-msg',
+                    text: 'No historical changes recorded yet.'
+                }));
+            } else {
+                if (historyLog.length > 1 && typeof Chart !== 'undefined') {
+                    const historyChartContainer = Utils.createElement('div', { className: 'history-chart-container' });
+                    historyChartContainer.appendChild(Utils.createElement('canvas', {
+                        attrs: { id: 'historyProgressionChart', style: 'max-height: 250px;' }
+                    }));
+                    panelContentFragment.appendChild(historyChartContainer);
+                } else if (historyLog.length <= 1) {
+                    panelContentFragment.appendChild(Utils.createElement('p', {
+                        className: 'no-history-msg',
+                        text: 'Need at least two data points for a chart.'
+                    }));
+                } else {
+                    panelContentFragment.appendChild(Utils.createElement('p', {
+                        className: 'no-history-msg',
+                        text: 'Charting library not loaded.'
+                    }));
+                }
+
+                panelContentFragment.appendChild(Utils.createElement('h3', { text: `History Log (Last ${historyLog.length})` }));
+                const table = document.createElement('table');
+                const thead = document.createElement('thead');
+                const headerRow = document.createElement('tr');
+                const tbody = document.createElement('tbody');
+                [
+                    { text: 'Date & Time', className: '' },
+                    { text: 'Skill', className: 'numeric' },
+                    { text: 'Class', className: 'numeric' },
+                    { text: 'Points', className: 'numeric' }
+                ].forEach(header => {
+                    headerRow.appendChild(Utils.createElement('th', {
+                        className: header.className,
+                        text: header.text
+                    }));
+                });
+                thead.appendChild(headerRow);
+
+                for (let i = 0; i < historyLog.length; i += 1) {
                     const entry = historyLog[i];
                     const olderEntry = historyLog[i + 1] || null;
                     let skillChange = null;
@@ -830,18 +958,26 @@
                         previousClass = olderEntry.class;
                     }
 
-                    tableHTML += `<tr>
-                        <td>${Utils.formatDate(entry.timestamp, true)}</td>
-                        <td class="numeric">${formatChange(entry.skill, skillChange, 2)}</td>
-                        <td class="numeric">${formatClassChange(entry.class, previousClass)}</td>
-                        <td class="numeric">${formatChange(entry.points, pointsChange, 0)}</td>
-                    </tr>`;
+                    const row = document.createElement('tr');
+                    const dateCell = Utils.createElement('td', { text: Utils.formatDate(entry.timestamp, true) });
+                    const skillCell = Utils.createElement('td', { className: 'numeric' });
+                    skillCell.appendChild(formatHistoryChangeNode(entry.skill, skillChange, 2));
+                    const classCell = Utils.createElement('td', { className: 'numeric' });
+                    classCell.appendChild(formatHistoryClassNode(entry.class, previousClass));
+                    const pointsCell = Utils.createElement('td', { className: 'numeric' });
+                    pointsCell.appendChild(formatHistoryChangeNode(entry.points, pointsChange, 0));
+                    row.append(dateCell, skillCell, classCell, pointsCell);
+                    tbody.appendChild(row);
                 }
-                tableHTML += '</tbody></table>';
-                historyContentDiv.innerHTML = chartHTML + tableHTML;
+                table.append(thead, tbody);
+                panelContentFragment.appendChild(table);
             }
+            historyContentDiv.replaceChildren(panelContentFragment);
 
-            content.innerHTML = '<div class="history-title">Your Racing Stats History <button class="history-close">&times;</button></div>';
+            const historyTitle = Utils.createElement('div', { className: 'history-title' });
+            historyTitle.append('Your Racing Stats History ');
+            historyTitle.appendChild(Utils.createElement('button', { className: 'history-close', text: '\u00D7' }));
+            content.appendChild(historyTitle);
             content.appendChild(historyContentDiv);
 
             const actionsDiv = document.createElement('div');
