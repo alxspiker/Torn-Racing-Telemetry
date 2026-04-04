@@ -437,16 +437,6 @@
             table.append(thead, tbody);
             return table;
         },
-        createStatSummaryParagraph(items) {
-            const paragraph = document.createElement('p');
-            items.forEach((item, index) => {
-                if (index > 0) paragraph.append(' | ');
-                paragraph.appendChild(Utils.createElement('span', { className: 'stat-label', text: `${item.label}:` }));
-                paragraph.append(' ');
-                paragraph.appendChild(Utils.createElement('span', { className: 'stat-value', text: item.value }));
-            });
-            return paragraph;
-        },
         createInlineStatPairs(pairs, className = '') {
             const container = Utils.createElement('span', className ? { className } : {});
             pairs.forEach((pair, index) => {

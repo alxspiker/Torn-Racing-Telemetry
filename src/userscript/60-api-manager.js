@@ -135,23 +135,6 @@
                 this.isFetching.delete(userId);
             }
         },
-        async fetchUserRacingPoints(apiKey, userId) {
-            if (!apiKey || !userId) return null;
-            if (this.isFetching.has(`points-${userId}`)) return null;
-
-            this.isFetching.add(`points-${userId}`);
-            const apiUrl = `https://api.torn.com/v2/user?selections=personalstats&id=${userId}&cat=racing&key=${apiKey}`;
-            try {
-                const data = await this.fetchJson(apiUrl, { headers: { 'Accept': 'application/json' } });
-                const points = data?.personalstats?.racing?.points;
-                return typeof points === 'number' ? points : null;
-            } catch (error) {
-                Utils.showNotification(error.message, 'error');
-                return null;
-            } finally {
-                this.isFetching.delete(`points-${userId}`);
-            }
-        },
         async fetchTrackData(apiKey) {
             const cached = GM_getValue('tornTrackCache', null);
             if (cached && Date.now() - cached.timestamp < 86400000) return cached.data;
