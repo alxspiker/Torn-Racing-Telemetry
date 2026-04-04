@@ -860,7 +860,7 @@
         buildTrackAnalysisHTML(trackRecords, currentUserCar, trackName, raceClass, topCarsData) {
             const fragment = document.createDocumentFragment();
             fragment.appendChild(Utils.createElement('h3', { text: `Track Analysis: ${trackName} (Class ${raceClass || 'Unknown'})` }));
-            fragment.appendChild(Utils.createElement('h4', { text: 'Your Current Car' }));
+            fragment.appendChild(Utils.createElement('h4', { className: 'track-analysis-subheading', text: 'Your Current Car' }));
 
             if (currentUserCar && currentUserCar.stats) {
                 const carNameParagraph = document.createElement('p');
@@ -885,7 +885,7 @@
                 fragment.appendChild(this.createPanelMessage('info-msg', 'Could not identify your currently selected car.'));
             }
 
-            fragment.appendChild(Utils.createElement('h4', { text: 'Track Records (Top 5)' }));
+            fragment.appendChild(Utils.createElement('h4', { className: 'track-analysis-subheading', text: 'Track Records (Top 5)' }));
             if (trackRecords && trackRecords.length > 0) {
                 fragment.appendChild(this.createStatsTable(
                     [
@@ -917,7 +917,7 @@
                     })
                 ));
 
-                fragment.appendChild(Utils.createElement('h4', { text: 'Top Performing Cars Analysis' }));
+                fragment.appendChild(Utils.createElement('h4', { className: 'track-analysis-subheading', text: 'Top Performing Cars Analysis' }));
                 if (topCarsData && topCarsData.length > 0) {
                     fragment.appendChild(this.createStatsTable(
                         [

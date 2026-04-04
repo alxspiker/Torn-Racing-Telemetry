@@ -1342,7 +1342,7 @@
         buildTrackAnalysisHTML(trackRecords, currentUserCar, trackName, raceClass, topCarsData) {
             const fragment = document.createDocumentFragment();
             fragment.appendChild(Utils.createElement('h3', { text: `Track Analysis: ${trackName} (Class ${raceClass || 'Unknown'})` }));
-            fragment.appendChild(Utils.createElement('h4', { text: 'Your Current Car' }));
+            fragment.appendChild(Utils.createElement('h4', { className: 'track-analysis-subheading', text: 'Your Current Car' }));
 
             if (currentUserCar && currentUserCar.stats) {
                 const carNameParagraph = document.createElement('p');
@@ -1367,7 +1367,7 @@
                 fragment.appendChild(this.createPanelMessage('info-msg', 'Could not identify your currently selected car.'));
             }
 
-            fragment.appendChild(Utils.createElement('h4', { text: 'Track Records (Top 5)' }));
+            fragment.appendChild(Utils.createElement('h4', { className: 'track-analysis-subheading', text: 'Track Records (Top 5)' }));
             if (trackRecords && trackRecords.length > 0) {
                 fragment.appendChild(this.createStatsTable(
                     [
@@ -1399,7 +1399,7 @@
                     })
                 ));
 
-                fragment.appendChild(Utils.createElement('h4', { text: 'Top Performing Cars Analysis' }));
+                fragment.appendChild(Utils.createElement('h4', { className: 'track-analysis-subheading', text: 'Top Performing Cars Analysis' }));
                 if (topCarsData && topCarsData.length > 0) {
                     fragment.appendChild(this.createStatsTable(
                         [
@@ -3275,6 +3275,8 @@
             const detailsBg = this.mixColors(panelBase, contrastTarget, isDark ? 0.04 : 0.02);
             const tableHeaderBg = this.mixColors(panelBase, contrastTarget, isDark ? 0.1 : 0.05);
             const tableRowAltBg = this.mixColors(panelBase, contrastTarget, isDark ? 0.04 : 0.02);
+            const panelHeading = this.mixColors(text, accent, isDark ? 0.35 : 0.30);
+            const panelHoverBg = this.mixColors(panelRaised, accent, isDark ? 0.18 : 0.10);
 
             return {
                 '--text-color': this.toCssColor(text),
@@ -3282,6 +3284,9 @@
                 '--background-light': this.toCssColor(panelRaised),
                 '--border-color': this.toCssColor(border),
                 '--accent-color': this.toCssColor(accent),
+                '--panel-link-color': '#74c0fc',
+                '--panel-heading-color': this.toCssColor(panelHeading),
+                '--panel-hover-bg': this.toCssColor(panelHoverBg),
                 '--primary-color': 'rgb(76, 175, 80)',
                 '--telemetry-default-color': this.toCssColor(this.mixColors(text, panelBase, 0.45)),
                 '--telemetry-accel-color': 'rgb(76, 175, 80)',
@@ -3317,6 +3322,9 @@
             --background-light: #2a2a2a;
             --border-color: #404040;
             --accent-color: #64B5F6;
+            --panel-link-color: #74c0fc;
+            --panel-heading-color: #9BC4E8;
+            --panel-hover-bg: #3A5D7E;
             --primary-color: #4CAF50;
             --telemetry-default-color: rgb(136, 136, 136);
             --telemetry-accel-color: rgb(76, 175, 80);
@@ -3362,7 +3370,7 @@
         .driver-details { width: 100%; background-color: var(--details-bg); margin-top: 6px; padding: 0 10px; box-sizing: border-box; max-height: 0; opacity: 0; overflow: hidden; border-radius: 4px; color: #bbb; font-size: 0.9em; transition: max-height 0.4s ease-out, opacity 0.3s ease-in, padding-top 0.4s ease-out, padding-bottom 0.4s ease-out, margin-top 0.4s ease-out; }
         .driver-details p { margin: 5px 0; line-height: 1.4; }
         .driver-details strong { color: #ddd; }
-        .driver-details a { color: var(--accent-color); text-decoration: none; }
+        .driver-details a { color: var(--panel-link-color); text-decoration: none; }
         .driver-details a:hover { text-decoration: underline; }
         .custom-driver-item.details-visible .driver-details { max-height: 350px; opacity: 1; padding-top: 8px; padding-bottom: 8px; margin-top: 6px; }
         .api-stats-container { border-top: 1px dashed var(--border-color); margin-top: 8px; padding-top: 8px; }
@@ -3374,7 +3382,7 @@
         .api-stat { font-weight: bold; color: var(--text-color); }
         #telemetryControlsContainer { margin: 10px 0 5px 0; justify-content: flex-end; gap: 5px; }
         .telemetry-download-button, .telemetry-info-button, .telemetry-history-button, .telemetry-stats-button, .telemetry-settings-button { background: var(--background-light); color: var(--text-color); border: 1px solid var(--border-color); padding: 6px 12px; text-align: center; cursor: pointer; transition: all 0.2s ease; font-size: 13px; border-radius: 4px; display: inline-block; }
-        .telemetry-info-button:hover, .telemetry-history-button:hover, .telemetry-stats-button:hover, .telemetry-settings-button:hover, .telemetry-download-button:hover { background-color: var(--accent-color); color: var(--background-dark); }
+        .telemetry-info-button:hover, .telemetry-history-button:hover, .telemetry-stats-button:hover, .telemetry-settings-button:hover, .telemetry-download-button:hover { background-color: var(--panel-hover-bg); color: var(--text-color); }
         .telemetry-history-button:hover { background-color: var(--history-color); color: var(--background-dark); }
         .telemetry-info-button:hover { background-color: var(--info-color); color: var(--background-dark); }
         .telemetry-download-button:hover { background-color: var(--download-color); color: white; }
@@ -3389,12 +3397,12 @@
         .download-popup-content { max-width: 450px; }
         .settings-title, .stats-title, .history-title, .info-title, .download-title { font-size: 20px; font-weight: bold; margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; }
         .settings-title { color: var(--primary-color); }
-        .stats-title { color: var(--accent-color); }
+        .stats-title { color: var(--panel-heading-color); }
         .history-title { color: var(--history-color); }
         .info-title { color: var(--info-color); }
         .download-title { color: var(--download-color); }
         .settings-close, .stats-close, .history-close, .info-close, .download-close { background: var(--background-light); color: var(--text-color); border: none; border-radius: 4px; padding: 8px 15px; cursor: pointer; transition: all 0.2s ease; }
-        .settings-close:hover, .stats-close:hover, .history-close:hover, .info-close:hover, .download-close:hover { background: var(--accent-color); color: var(--background-dark); }
+        .settings-close:hover, .stats-close:hover, .history-close:hover, .info-close:hover, .download-close:hover { background: var(--panel-hover-bg); color: var(--text-color); }
         .history-panel .panel-actions { display: flex; justify-content: flex-end; margin-top: 15px; padding-top: 10px; border-top: 1px solid var(--border-color); }
         .history-clear-button { background: var(--danger-color); color: white; border: none; border-radius: 4px; padding: 8px 15px; cursor: pointer; transition: background-color 0.2s ease; font-size: 0.9em; }
         .history-clear-button:hover { background: var(--danger-hover-color); }
@@ -3405,18 +3413,19 @@
         .download-content label { font-weight: bold; min-width: 60px; }
         .download-content select { padding: 8px; background: var(--background-light); border: 1px solid var(--border-color); border-radius: 4px; color: var(--text-color); flex-grow: 1; }
         .download-content button { background: var(--background-light); color: var(--text-color); border: 1px solid var(--border-color); padding: 8px 15px; border-radius: 4px; cursor: pointer; transition: all 0.2s ease; }
-        .download-content button:hover { background: var(--accent-color); color: var(--background-dark); }
+        .download-content button:hover { background: var(--panel-hover-bg); color: var(--text-color); }
         .download-content button.primary { background: var(--download-color); color: white; }
         .download-content button.primary:hover { background: #7B1FA2; }
         .info-content h3 { color: var(--primary-color); margin-top: 20px; margin-bottom: 10px; font-size: 1.1em; }
         .info-content p, .info-content ul { margin-bottom: 10px; line-height: 1.5; color: var(--text-color); }
         .info-content ul { list-style: disc; padding-left: 25px; }
         .info-content li { margin-bottom: 5px; }
-        .info-content a { color: var(--accent-color); }
-        .info-content a:hover { text-decoration: underline; }
+        .settings-content a, .stats-content a, .history-content a, .info-content a, .download-content a, .api-tos-container a { color: var(--panel-link-color); }
+        .settings-content a:hover, .stats-content a:hover, .history-content a:hover, .info-content a:hover, .download-content a:hover, .api-tos-container a:hover { text-decoration: underline; }
         .stats-content h3, .history-content h3 { color: var(--primary-color); margin-top: 20px; margin-bottom: 10px; padding-bottom: 5px; border-bottom: 1px dashed var(--border-color); font-size: 1.2em; }
         .stats-content h3:first-child, .history-content h3:first-child { margin-top: 0; }
-        .stats-content h4 { color: var(--accent-color); margin-top: 15px; margin-bottom: 8px; font-size: 1.1em; }
+        .stats-content h4 { color: var(--panel-heading-color); margin-top: 15px; margin-bottom: 8px; font-size: 1.1em; }
+        .stats-content h4.track-analysis-subheading { color: var(--primary-color); }
         .stats-content p { margin: 5px 0 10px 0; line-height: 1.5; color: #ccc; }
         .stats-content strong { color: var(--text-color); }
         .stats-content .loading-msg, .stats-content .error-msg, .stats-content .info-msg { padding: 10px; border-radius: 4px; margin: 15px 0; text-align: center; }
@@ -3437,7 +3446,7 @@
         .stats-content .car-stats-inline { font-size: 0.8em; color: #aaa; }
         .stats-content .car-stats-inline strong { color: #bbb; }
         .stats-content .user-car-highlight { background-color: rgba(76, 175, 80, 0.15); }
-        .stats-content a { color: var(--accent-color); text-decoration: none; }
+        .stats-content a { text-decoration: none; }
         .stats-content a:hover { text-decoration: underline; }
         .stats-content td { color: var(--text-color); padding: 2px !important; }
         .stats-summary-cards, .stats-delta-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 16px; }
@@ -3485,7 +3494,7 @@
         .toggle-container label:first-child { margin-bottom: 0; }
         .settings-buttons { display: flex; justify-content: space-between; margin-top: 25px; padding-top: 15px; border-top: 1px solid var(--border-color); gap: 10px; flex-wrap: wrap; }
         .settings-btn { padding: 10px 15px; border-radius: 4px; border: none; cursor: pointer; background: var(--background-light); color: var(--text-color); transition: all 0.2s ease; flex-grow: 1; }
-        .settings-btn:hover { background: var(--accent-color); color: var(--background-dark); }
+        .settings-btn:hover { background: var(--panel-hover-bg); color: var(--text-color); }
         .settings-btn.primary { background: var(--primary-color); color: white; }
         .settings-btn.primary:hover { background: #388E3C; }
         .settings-btn.danger { background-color: var(--danger-color); color: white; }
