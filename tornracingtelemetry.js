@@ -795,7 +795,21 @@
                 ? (bestLapValues.reduce((sum, value) => sum + value, 0) / bestLapValues.length)
                 : null;
             const skillGainTotal = races.reduce((sum, entry) => sum + (Number.isFinite(entry.skillGain) ? entry.skillGain : 0), 0);
-            return { races: races.length, avgPosition, winRate, crashRate, avgBestLap, skillGainTotal };
+            const avgSkillGainPerRace = races.length ? (skillGainTotal / races.length) : null;
+            return { races: races.length, avgPosition, winRate, crashRate, avgBestLap, skillGainTotal, avgSkillGainPerRace };
+        },
+        getComparisonWindows(entries, targetWindow = 20) {
+            const normalizedEntries = Array.isArray(entries) ? entries : [];
+            const maxWindow = Math.max(1, Number(targetWindow) || 20);
+            const availablePairs = Math.floor(normalizedEntries.length / 2);
+            const windowSize = Math.min(maxWindow, availablePairs);
+            if (windowSize <= 0) {
+                return { recentWindow: [], previousWindow: [], hasPrevious: false };
+            }
+
+            const recentWindow = normalizedEntries.slice(0, windowSize);
+            const previousWindow = normalizedEntries.slice(windowSize, windowSize * 2);
+            return { recentWindow, previousWindow, hasPrevious: previousWindow.length > 0 };
         },
         createSortableStatsTableSection({ title, columns, rows, defaultSortKey, defaultSortDir = 'desc', emptyMessage = 'No data available.' }) {
             const section = document.createDocumentFragment();
@@ -1103,11 +1117,9 @@
                     { label: 'Best Lap', value: Number.isFinite(bestLap) ? Utils.formatTime(bestLap, true) : 'N/A' }
                 ]));
 
-                const recentWindow = raceEntries.slice(0, 20);
-                const previousWindow = raceEntries.slice(20, 40);
+                const { recentWindow, previousWindow, hasPrevious } = this.getComparisonWindows(raceEntries, 20);
                 const recentAgg = this.aggregateRaceWindow(recentWindow);
                 const previousAgg = this.aggregateRaceWindow(previousWindow);
-                const hasPrevious = previousWindow.length > 0;
                 const avgPosDelta = hasPrevious && Number.isFinite(recentAgg.avgPosition) && Number.isFinite(previousAgg.avgPosition)
                     ? recentAgg.avgPosition - previousAgg.avgPosition
                     : null;
@@ -1120,8 +1132,8 @@
                 const lapDelta = hasPrevious && Number.isFinite(recentAgg.avgBestLap) && Number.isFinite(previousAgg.avgBestLap)
                     ? recentAgg.avgBestLap - previousAgg.avgBestLap
                     : null;
-                const skillDelta = hasPrevious
-                    ? recentAgg.skillGainTotal - previousAgg.skillGainTotal
+                const skillDelta = hasPrevious && Number.isFinite(recentAgg.avgSkillGainPerRace) && Number.isFinite(previousAgg.avgSkillGainPerRace)
+                    ? recentAgg.avgSkillGainPerRace - previousAgg.avgSkillGainPerRace
                     : null;
 
                 fragment.appendChild(this.createStatsCards([
@@ -1147,7 +1159,7 @@
                         trendClass: lapDelta < 0 ? 'positive' : (lapDelta > 0 ? 'negative' : '')
                     },
                     {
-                        label: 'Skill Gain Δ',
+                        label: 'Avg Skill / Race Δ',
                         value: this.formatSignedNumber(skillDelta, 4),
                         trendClass: skillDelta > 0 ? 'positive' : (skillDelta < 0 ? 'negative' : '')
                     }
@@ -1523,16 +1535,17 @@
             const avgPosition = finishedEntries.length
                 ? (finishedEntries.reduce((sum, entry) => sum + entry.position, 0) / finishedEntries.length)
                 : null;
-            const recentWindow = raceEntries.slice(0, 20);
-            const previousWindow = raceEntries.slice(20, 40);
+            const { recentWindow, previousWindow, hasPrevious } = this.getComparisonWindows(raceEntries, 20);
             const recentAgg = this.aggregateRaceWindow(recentWindow);
             const previousAgg = this.aggregateRaceWindow(previousWindow);
-            const hasPrevious = previousWindow.length > 0;
             const avgPosDelta = hasPrevious && Number.isFinite(recentAgg.avgPosition) && Number.isFinite(previousAgg.avgPosition)
                 ? recentAgg.avgPosition - previousAgg.avgPosition
                 : null;
-            const skillGainDelta = hasPrevious
-                ? recentAgg.skillGainTotal - previousAgg.skillGainTotal
+            const skillGainValues = raceEntries
+                .map(entry => entry.skillGain)
+                .filter(value => Number.isFinite(value));
+            const avgSkillGainShown = skillGainValues.length
+                ? (skillGainValues.reduce((sum, value) => sum + value, 0) / skillGainValues.length)
                 : null;
 
             const summaryItems = [
@@ -1562,9 +1575,9 @@
                     trendClass: avgPosDelta < 0 ? 'positive' : (avgPosDelta > 0 ? 'negative' : '')
                 },
                 {
-                    label: 'Skill Gain \u0394',
-                    value: this.formatSignedNumber(skillGainDelta, 4),
-                    trendClass: skillGainDelta > 0 ? 'positive' : (skillGainDelta < 0 ? 'negative' : '')
+                    label: 'Avg Skill / Race',
+                    value: this.formatSignedNumber(avgSkillGainShown, 4),
+                    trendClass: avgSkillGainShown > 0 ? 'positive' : (avgSkillGainShown < 0 ? 'negative' : '')
                 }
             ];
 
