@@ -2,7 +2,6 @@
 
     function cleanupScriptState(reason = "Unknown") {
         if (State.observers.length > 0) { State.observers.forEach(obs => obs.disconnect()); State.observers = []; }
-        if (State.historyCheckIntervalId) { clearInterval(State.historyCheckIntervalId); State.historyCheckIntervalId = null; }
         document.querySelectorAll('.driver-telemetry-display').forEach(el => {
             if (el._animationRAF) cancelAnimationFrame(el._animationRAF);
              el._animationRAF = null;
@@ -16,6 +15,23 @@
         State.clearPopupsAndFullReset();
         State.isRaceViewActive = false;
         document.body.classList.remove('hide-original-leaderboard', 'telemetry-hidden');
+    }
+
+    async function purgeHistoryStorageIfNeeded() {
+        if (State.historyStoragePurged) {
+            return;
+        }
+        State.historyStoragePurged = true;
+
+        try {
+            GM_deleteValue('racingHistoryLog_v3.1.0');
+        } catch (e) { }
+
+        if (typeof HistoryStore !== 'undefined' && HistoryStore?.isSupported?.()) {
+            try {
+                await HistoryStore.clearEntries();
+            } catch (e) { }
+        }
     }
 
     async function initialize() {
@@ -49,8 +65,7 @@
                 Config.set('apiKey', '###PDA-APIKEY###');
                 Utils.showNotification('Torn PDA API key automatically configured.', 'success');
             }
-
-            await HistoryManager.loadLog();
+            await purgeHistoryStorageIfNeeded();
 
             State.originalLeaderboard = document.getElementById('leaderBoard');
             const originalScrollbarContainer = document.getElementById('drivers-scrollbar');
@@ -83,7 +98,6 @@
             else if (!Config.get('hideOriginalList')) { State.resetRaceState(); }
 
             State.isInitialized = true;
-            HistoryManager.startCheckInterval();
 
             if (State.observers.length === 0 && document.body.contains(State.originalLeaderboard)) {
                 const observer = new MutationObserver(() => {

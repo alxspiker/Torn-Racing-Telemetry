@@ -7,8 +7,6 @@
             historicalRaceLimit: 20,
             historyEnabled: true,
             statsPanelEnabled: true,
-            historyCheckInterval: 15000,
-            historyLogLimit: 10,
             speedSmoothingFactor: 0.7,
             maxAnimationDurationMs: 1000
         },
@@ -39,6 +37,16 @@
                 delete this.data.animationLerpRate;
                 this.save();
             }
+            let hasDeprecatedHistoryKeys = false;
+            ['historyCheckInterval', 'historyLogLimit'].forEach(key => {
+                if (key in this.data) {
+                    delete this.data[key];
+                    hasDeprecatedHistoryKeys = true;
+                }
+            });
+            if (hasDeprecatedHistoryKeys) {
+                this.save();
+            }
             return this.data;
         },
         save() {
@@ -63,7 +71,6 @@
             this.data = { ...this.defaults };
             this.data.apiKey = currentApiKey;
             this.save();
-            await HistoryManager.clearLog();
         },
         clearApiKey() {
              this.data.apiKey = '';

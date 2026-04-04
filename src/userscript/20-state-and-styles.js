@@ -7,7 +7,7 @@
         trackNameMap: null, carBaseStatsMap: null, currentRaceClass: null,
         isInitialized: false, isRaceViewActive: false, raceFinished: false, currentRaceId: null,
         controlsContainer: null,
-        lastKnownSkill: null, lastKnownClass: null, lastKnownPoints: null, historyLog: [], historyCheckIntervalId: null, isFetchingPoints: false,
+        historyStoragePurged: false,
         finalRaceData: [],
 
         resetRaceState() {
@@ -46,13 +46,6 @@
             this.isInitialized = false;
             this.controlsContainer = null;
             this.customUIContainer = null;
-            if (this.historyCheckIntervalId) clearInterval(this.historyCheckIntervalId);
-            this.historyCheckIntervalId = null;
-            this.lastKnownSkill = null;
-            this.lastKnownClass = null;
-            this.lastKnownPoints = null;
-            this.historyLog = [];
-            this.isFetchingPoints = false;
             this.raceFinished = false;
             this.finalRaceData = [];
             this.currentRaceId = null;
