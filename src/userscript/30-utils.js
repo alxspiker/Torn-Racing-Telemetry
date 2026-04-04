@@ -58,18 +58,7 @@
 
             return element;
         },
-        createChart(ctx, config) {
-             if (!ctx || typeof Chart === 'undefined') return null;
-             try {
-                 Chart.defaults.color = getComputedStyle(document.documentElement).getPropertyValue('--text-color').trim();
-                 const chart = new Chart(ctx, config);
-                 State.activeCharts.push(chart);
-                 return chart;
-             } catch(e) {
-                return null;
-             }
-         },
-         escapeCSVField(field) {
+        escapeCSVField(field) {
             if (field === null || field === undefined) {
                 return '';
             }

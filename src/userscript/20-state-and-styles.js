@@ -8,7 +8,6 @@
         isInitialized: false, isRaceViewActive: false, raceFinished: false, currentRaceId: null,
         controlsContainer: null,
         lastKnownSkill: null, lastKnownClass: null, lastKnownPoints: null, historyLog: [], historyCheckIntervalId: null, isFetchingPoints: false,
-        activeCharts: [],
         finalRaceData: [],
 
         resetRaceState() {
@@ -28,7 +27,6 @@
                 el.querySelectorAll('.api-stat').forEach(span => span.textContent = '...');
                 el.querySelector('.api-stats-container')?.classList.remove('error', 'loaded', 'no-key');
             });
-            this.destroyActiveCharts();
             this.raceFinished = false;
             this.finalRaceData = [];
             this.currentRaceId = null;
@@ -55,17 +53,8 @@
             this.lastKnownPoints = null;
             this.historyLog = [];
             this.isFetchingPoints = false;
-            this.destroyActiveCharts();
             this.raceFinished = false;
             this.finalRaceData = [];
             this.currentRaceId = null;
-        },
-        destroyActiveCharts() {
-            this.activeCharts.forEach(chart => {
-                if (chart && typeof chart.destroy === 'function') {
-                    try { chart.destroy(); } catch (e) {}
-                }
-            });
-            this.activeCharts = [];
         }
     };

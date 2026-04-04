@@ -5,7 +5,6 @@
 // @description  Enhanced Torn Racing UI: Telemetry, driver stats, advanced stats panel, history tracking, and race results export.
 // @match        https://www.torn.com/page.php?sid=racing*
 // @match        https://www.torn.com/loader.php?sid=racing*
-// @require      https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @grant        GM_deleteValue
@@ -41,36 +40,3 @@
     // Check if we're running in Torn PDA
     const isPDA = typeof window.flutter_inappwebview !== 'undefined' &&
                 typeof window.flutter_inappwebview.callHandler === 'function';
-
-    // Function to load Chart.js in PDA environment
-    async function loadChartJsInPDA() {
-        try {
-            if (typeof __PDA_platformReadyPromise !== 'undefined') {
-                await __PDA_platformReadyPromise;
-            }
-            const chartJsUrl = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js';
-            const response = await window.flutter_inappwebview.callHandler("PDA_httpGet", chartJsUrl, {});
-
-            if (response && response.status === 200 && response.responseText) {
-                await window.flutter_inappwebview.callHandler("PDA_evaluateJavascript", response.responseText);
-                console.log("Torn Racing Telemetry: Successfully loaded Chart.js in PDA environment");
-                return true;
-            } else {
-                console.error("Torn Racing Telemetry: Failed to fetch Chart.js in PDA environment", response);
-                return false;
-            }
-        } catch (error) {
-            console.error("Torn Racing Telemetry: Error loading Chart.js in PDA environment", error);
-            return false;
-        }
-    }
-
-    // Load Chart.js if needed
-    if (isPDA) {
-        console.log("Torn Racing Telemetry: Running in Torn PDA environment");
-        loadChartJsInPDA().then(success => {
-            if (!success) {
-                console.error("Torn Racing Telemetry: Charts will not be available in PDA");
-            }
-        });
-    }

@@ -289,7 +289,12 @@
         .stats-content a { color: var(--accent-color); text-decoration: none; }
         .stats-content a:hover { text-decoration: underline; }
         .stats-content td { color: var(--text-color); padding: 2px !important; }
-        .stats-chart-container, .history-chart-container { margin: 20px 0; padding: 10px; border: 1px solid var(--border-color); border-radius: 5px; background-color: var(--background-light); min-height: 250px; position: relative; }
+        .stats-summary-cards, .stats-delta-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 16px; }
+        .stats-summary-card { border: 1px solid var(--border-color); border-radius: 6px; background: var(--background-light); padding: 10px; }
+        .stats-summary-label { font-size: 0.78em; color: #aaa; text-transform: uppercase; letter-spacing: 0.04em; }
+        .stats-summary-value { margin-top: 4px; font-size: 1.05em; font-weight: 700; color: var(--text-color); }
+        .stats-summary-value.positive { color: #81C784; }
+        .stats-summary-value.negative { color: #E57373; }
         .history-content table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.95em; }
         .history-content th, .history-content td { border: 1px solid var(--border-color); padding: 5px 8px; text-align: left; color: var(--text-color); }
         .history-content th { background-color: var(--table-header-bg); font-weight: bold; }
@@ -317,8 +322,8 @@
         .history-race-skill.positive { color: #81C784; }
         .history-race-skill.negative { color: #E57373; }
         .history-race-meta { font-size: 0.85em; color: #9ca4ad; }
-        .history-sort-btn { background: transparent; border: none; color: inherit; font: inherit; cursor: pointer; padding: 0; text-decoration: none; }
-        .history-sort-btn:hover { text-decoration: underline; }
+        .history-sort-btn, .stats-sort-btn { background: transparent; border: none; color: inherit; font: inherit; cursor: pointer; padding: 0; text-decoration: none; }
+        .history-sort-btn:hover, .stats-sort-btn:hover { text-decoration: underline; }
         .settings-item { margin-bottom: 15px; display: flex; flex-direction: column; }
         .settings-item label:not(.switch) { margin-bottom: 8px; color: var(--text-color); font-weight: bold; display: block; }
         .settings-item .telemetry-options-group { display: flex; flex-direction: column; gap: 10px; margin-top: 5px; border: 1px solid var(--border-color); border-radius: 4px; padding: 10px; background: var(--background-light); }

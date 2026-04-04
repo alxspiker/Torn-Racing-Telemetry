@@ -201,5 +201,10 @@
 
             return allRaces.slice(0, boundedLimit);
         },
+        async fetchUserRacingRecords(apiKey) {
+            if (!apiKey) throw new Error("API Key required.");
+            const data = await this.fetchWithAuthHeader('https://api.torn.com/v2/user/racingrecords', apiKey);
+            return Array.isArray(data?.racingrecords) ? data.racingrecords : [];
+        },
         async fetchTrackRecords(apiKey, trackId, raceClass) { if (!trackId) throw new Error("Track ID required."); if (!raceClass) throw new Error("Race Class required."); const url = `https://api.torn.com/v2/racing/${trackId}/records?cat=${raceClass}`; const data = await this.fetchWithAuthHeader(url, apiKey); return data.records || []; }
     };

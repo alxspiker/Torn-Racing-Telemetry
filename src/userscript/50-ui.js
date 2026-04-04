@@ -326,10 +326,123 @@
             });
             return banner;
         },
-        createChartContainer(canvasId, className = 'stats-chart-container') {
-            const container = Utils.createElement('div', { className });
-            container.appendChild(Utils.createElement('canvas', { attrs: { id: canvasId } }));
-            return container;
+        createStatsCards(items, wrapperClass = 'stats-summary-cards') {
+            const wrapper = Utils.createElement('div', { className: wrapperClass });
+            items.forEach(item => {
+                const card = Utils.createElement('div', { className: 'stats-summary-card' });
+                const label = Utils.createElement('div', { className: 'stats-summary-label', text: item.label });
+                const value = Utils.createElement('div', {
+                    className: `stats-summary-value${item.trendClass ? ` ${item.trendClass}` : ''}`,
+                    text: item.value
+                });
+                card.append(label, value);
+                wrapper.appendChild(card);
+            });
+            return wrapper;
+        },
+        aggregateRaceWindow(entries) {
+            const races = Array.isArray(entries) ? entries : [];
+            const finished = races.filter(entry => !entry.crashed && Number.isFinite(entry.position));
+            const crashes = races.filter(entry => entry.crashed).length;
+            const wins = finished.filter(entry => entry.position === 1).length;
+            const avgPosition = finished.length ? (finished.reduce((sum, entry) => sum + entry.position, 0) / finished.length) : null;
+            const winRate = finished.length ? (wins / finished.length) * 100 : null;
+            const crashRate = races.length ? (crashes / races.length) * 100 : null;
+            const bestLapValues = races.map(entry => entry.bestLap).filter(value => Number.isFinite(value));
+            const avgBestLap = bestLapValues.length
+                ? (bestLapValues.reduce((sum, value) => sum + value, 0) / bestLapValues.length)
+                : null;
+            const skillGainTotal = races.reduce((sum, entry) => sum + (Number.isFinite(entry.skillGain) ? entry.skillGain : 0), 0);
+            return { races: races.length, avgPosition, winRate, crashRate, avgBestLap, skillGainTotal };
+        },
+        createSortableStatsTableSection({ title, columns, rows, defaultSortKey, defaultSortDir = 'desc', emptyMessage = 'No data available.' }) {
+            const section = document.createDocumentFragment();
+            section.appendChild(Utils.createElement('h3', { text: title }));
+
+            if (!Array.isArray(rows) || rows.length === 0) {
+                section.appendChild(this.createPanelMessage('info-msg', emptyMessage));
+                return section;
+            }
+
+            const table = document.createElement('table');
+            const thead = document.createElement('thead');
+            const headerRow = document.createElement('tr');
+            const tbody = document.createElement('tbody');
+            const sortState = {
+                key: defaultSortKey || columns[0]?.key,
+                dir: defaultSortDir
+            };
+
+            const getColumn = key => columns.find(column => column.key === key) || columns[0];
+            const getSortValue = (row, column) => {
+                if (typeof column.sortValue === 'function') return column.sortValue(row);
+                return row[column.key];
+            };
+            const compareRows = (left, right) => {
+                const column = getColumn(sortState.key);
+                const leftValue = getSortValue(left, column);
+                const rightValue = getSortValue(right, column);
+                const leftMissing = leftValue === null || typeof leftValue === 'undefined';
+                const rightMissing = rightValue === null || typeof rightValue === 'undefined';
+
+                let result = 0;
+                if (leftMissing && rightMissing) result = 0;
+                else if (leftMissing) result = 1;
+                else if (rightMissing) result = -1;
+                else if (typeof leftValue === 'number' && typeof rightValue === 'number') result = leftValue - rightValue;
+                else result = String(leftValue).localeCompare(String(rightValue), undefined, { sensitivity: 'base', numeric: true });
+
+                return sortState.dir === 'asc' ? result : -result;
+            };
+            const renderRows = () => {
+                const sortedRows = [...rows].sort(compareRows);
+                const nodes = sortedRows.map(row => {
+                    const tr = Utils.createElement('tr', { className: row.className || '' });
+                    columns.forEach(column => {
+                        const td = Utils.createElement('td', { className: column.className || '' });
+                        const value = typeof column.render === 'function'
+                            ? column.render(row)
+                            : row[column.key];
+                        if (value instanceof Node) {
+                            td.appendChild(value);
+                        } else {
+                            td.textContent = value ?? '';
+                        }
+                        tr.appendChild(td);
+                    });
+                    return tr;
+                });
+                tbody.replaceChildren(...nodes);
+            };
+
+            columns.forEach(column => {
+                const th = Utils.createElement('th', { className: column.className || '' });
+                const button = Utils.createElement('button', {
+                    className: 'stats-sort-btn',
+                    text: column.label,
+                    attrs: { type: 'button' }
+                });
+                button.addEventListener('click', () => {
+                    if (sortState.key === column.key) {
+                        sortState.dir = sortState.dir === 'asc' ? 'desc' : 'asc';
+                    } else {
+                        sortState.key = column.key;
+                        sortState.dir = column.defaultDir || (column.className?.includes('numeric') ? 'desc' : 'asc');
+                    }
+                    renderRows();
+                });
+                th.appendChild(button);
+                headerRow.appendChild(th);
+            });
+            thead.appendChild(headerRow);
+            table.append(thead, tbody);
+            renderRows();
+            section.appendChild(table);
+            return section;
+        },
+        formatCentisecondsAsLapTime(lapTimeCs) {
+            if (!Number.isFinite(lapTimeCs)) return '-';
+            return Utils.formatTime(lapTimeCs / 100, true);
         },
         createStatsTable(headers, rows) {
             const table = document.createElement('table');
@@ -388,7 +501,6 @@
         async createAdvancedStatsPanel() {
             if (!Config.get('statsPanelEnabled')) return;
             if (State.advancedStatsPanelInstance) State.advancedStatsPanelInstance.remove();
-            State.destroyActiveCharts();
 
             const popup = document.createElement('div');
             popup.className = 'stats-panel';
@@ -403,7 +515,6 @@
             const closePanel = () => {
                 popup.remove();
                 State.advancedStatsPanelInstance = null;
-                State.destroyActiveCharts();
             };
 
             content.querySelector('.stats-close').addEventListener('click', closePanel);
@@ -418,7 +529,8 @@
             let processedData = null;
             let trackRecords = null;
             let topCarsData = null;
-            let trackRecordCount = 0;
+            let raceEntries = [];
+            let userRacingRecords = [];
 
             try {
                 if (!Utils.isApiKeyAvailable()) throw new Error('API Key not configured in Settings.');
@@ -452,28 +564,40 @@
                     currentUserCar = this.parseCurrentUserCarStats();
                 } catch (e) { }
 
-                const requests = [APIManager.fetchHistoricalRaceData(apiKey, State.userId, Config.get('historicalRaceLimit'))];
-                if (currentTrackId && currentRaceClass) {
-                    requests.push(APIManager.fetchTrackRecords(apiKey, currentTrackId, currentRaceClass));
-                } else {
-                    requests.push(Promise.resolve(null));
-                    if (!currentTrackId) errorMessages.push('Could not identify the current track.');
-                    if (!currentRaceClass) errorMessages.push('Could not identify the race class from page banner.');
-                }
+                if (!currentTrackId) errorMessages.push('Could not identify the current track.');
+                if (!currentRaceClass) errorMessages.push('Could not identify the race class from page banner.');
 
-                const [histResult, recordResult] = await Promise.allSettled(requests);
+                const historicalPromise = APIManager.fetchHistoricalRaceData(apiKey, State.userId, Config.get('historicalRaceLimit'));
+                const personalRecordsPromise = APIManager.fetchUserRacingRecords(apiKey);
+                const trackRecordsPromise = (currentTrackId && currentRaceClass)
+                    ? APIManager.fetchTrackRecords(apiKey, currentTrackId, currentRaceClass)
+                    : Promise.resolve(null);
+
+                const [histResult, personalRecordsResult, recordResult] = await Promise.allSettled([
+                    historicalPromise,
+                    personalRecordsPromise,
+                    trackRecordsPromise
+                ]);
+
+                if (personalRecordsResult.status === 'fulfilled') {
+                    userRacingRecords = personalRecordsResult.value;
+                } else {
+                    errorMessages.push(`Could not fetch personal racing records: ${personalRecordsResult.reason?.message || 'Unknown error.'}`);
+                }
 
                 if (histResult.status === 'fulfilled') {
                     processedData = StatsCalculator.processRaceData(histResult.value, State.userId);
-                    historicalStatsContent = this.buildHistoricalStatsHTML(processedData);
+                    raceEntries = histResult.value
+                        .map(race => this.normalizeHistoryRaceEntry(race, State.userId))
+                        .filter(Boolean);
+                    historicalStatsContent = this.buildHistoricalStatsHTML(processedData, raceEntries, userRacingRecords);
                 } else {
                     errorMessages.push(`Could not fetch historical races: ${histResult.reason?.message || 'Unknown error.'}`);
-                    historicalStatsContent = this.buildHistoricalStatsHTML(null);
+                    historicalStatsContent = this.buildHistoricalStatsHTML(null, [], userRacingRecords);
                 }
 
                 if (recordResult.status === 'fulfilled' && recordResult.value !== null) {
                     trackRecords = recordResult.value;
-                    trackRecordCount = trackRecords.length;
                     topCarsData = StatsCalculator.processTrackRecords(trackRecords);
                 } else if (recordResult.status === 'rejected') {
                     if (!recordResult.reason?.message?.includes('404')) {
@@ -511,98 +635,263 @@
                 if (trackAnalysisContent) {
                     finalFragment.appendChild(trackAnalysisContent);
                 }
-                statsContentDiv.replaceChildren(finalFragment);
-
-                if (typeof Chart !== 'undefined') {
-                    this.renderStatsCharts(processedData, topCarsData, trackRecordCount);
-                } else {
-                    statsContentDiv.querySelectorAll('.stats-chart-container').forEach(el => {
-                        el.replaceChildren(this.createPanelMessage('info-msg', 'Charting library not loaded.'));
-                    });
+                if (State.advancedStatsPanelInstance !== popup || !document.body.contains(popup)) {
+                    return;
                 }
+                statsContentDiv.replaceChildren(finalFragment);
             }
         },
-        buildHistoricalStatsHTML(processedData) {
+        buildHistoricalStatsHTML(processedData, raceEntries = [], userRacingRecords = []) {
             const fragment = document.createDocumentFragment();
-            fragment.appendChild(Utils.createElement('h3', { text: 'Your Recent Performance' }));
+            fragment.appendChild(Utils.createElement('h3', { text: 'Performance Snapshot' }));
 
             if (!processedData || processedData.totalRaces === 0) {
                 fragment.appendChild(this.createPanelMessage('info-msg', 'No recent official race data found to analyze.'));
+            } else {
+                const overall = processedData.overall;
+                const trackStats = Object.values(processedData.trackStats);
+                const carStats = Object.values(processedData.carStats);
+                const bestLap = raceEntries
+                    .map(entry => entry.bestLap)
+                    .filter(value => Number.isFinite(value))
+                    .sort((left, right) => left - right)[0];
+
+                const analyzedParagraph = document.createElement('p');
+                analyzedParagraph.append('Analyzed ');
+                analyzedParagraph.appendChild(Utils.createElement('strong', { text: String(overall.races) }));
+                analyzedParagraph.append(` official races from ${Utils.formatDate(processedData.firstRaceTime)} to ${Utils.formatDate(processedData.lastRaceTime)}.`);
+                fragment.appendChild(analyzedParagraph);
+
+                fragment.appendChild(this.createStatsCards([
+                    { label: 'Races', value: String(overall.races) },
+                    { label: 'Wins / Podiums', value: `${overall.wins} / ${overall.podiums}` },
+                    { label: 'Avg Position', value: overall.avgPosition.toFixed(2) },
+                    { label: 'Win Rate', value: `${overall.winRate.toFixed(1)}%` },
+                    { label: 'Crash Rate', value: `${overall.crashRate.toFixed(1)}%` },
+                    { label: 'Best Lap', value: Number.isFinite(bestLap) ? Utils.formatTime(bestLap, true) : 'N/A' }
+                ]));
+
+                const recentWindow = raceEntries.slice(0, 20);
+                const previousWindow = raceEntries.slice(20, 40);
+                const recentAgg = this.aggregateRaceWindow(recentWindow);
+                const previousAgg = this.aggregateRaceWindow(previousWindow);
+                const hasPrevious = previousWindow.length > 0;
+                const avgPosDelta = hasPrevious && Number.isFinite(recentAgg.avgPosition) && Number.isFinite(previousAgg.avgPosition)
+                    ? recentAgg.avgPosition - previousAgg.avgPosition
+                    : null;
+                const winRateDelta = hasPrevious && Number.isFinite(recentAgg.winRate) && Number.isFinite(previousAgg.winRate)
+                    ? recentAgg.winRate - previousAgg.winRate
+                    : null;
+                const crashRateDelta = hasPrevious && Number.isFinite(recentAgg.crashRate) && Number.isFinite(previousAgg.crashRate)
+                    ? recentAgg.crashRate - previousAgg.crashRate
+                    : null;
+                const lapDelta = hasPrevious && Number.isFinite(recentAgg.avgBestLap) && Number.isFinite(previousAgg.avgBestLap)
+                    ? recentAgg.avgBestLap - previousAgg.avgBestLap
+                    : null;
+                const skillDelta = hasPrevious
+                    ? recentAgg.skillGainTotal - previousAgg.skillGainTotal
+                    : null;
+
+                fragment.appendChild(this.createStatsCards([
+                    { label: 'Window', value: `Last ${recentWindow.length} vs Prev ${previousWindow.length}` },
+                    {
+                        label: 'Avg Pos Δ',
+                        value: this.formatSignedNumber(avgPosDelta, 2),
+                        trendClass: avgPosDelta < 0 ? 'positive' : (avgPosDelta > 0 ? 'negative' : '')
+                    },
+                    {
+                        label: 'Win Rate Δ',
+                        value: Number.isFinite(winRateDelta) ? `${this.formatSignedNumber(winRateDelta, 1)} pp` : 'N/A',
+                        trendClass: winRateDelta > 0 ? 'positive' : (winRateDelta < 0 ? 'negative' : '')
+                    },
+                    {
+                        label: 'Crash Rate Δ',
+                        value: Number.isFinite(crashRateDelta) ? `${this.formatSignedNumber(crashRateDelta, 1)} pp` : 'N/A',
+                        trendClass: crashRateDelta < 0 ? 'positive' : (crashRateDelta > 0 ? 'negative' : '')
+                    },
+                    {
+                        label: 'Avg Lap Δ',
+                        value: Number.isFinite(lapDelta) ? `${this.formatSignedNumber(lapDelta, 3)}s` : 'N/A',
+                        trendClass: lapDelta < 0 ? 'positive' : (lapDelta > 0 ? 'negative' : '')
+                    },
+                    {
+                        label: 'Skill Gain Δ',
+                        value: this.formatSignedNumber(skillDelta, 4),
+                        trendClass: skillDelta > 0 ? 'positive' : (skillDelta < 0 ? 'negative' : '')
+                    }
+                ], 'stats-delta-cards'));
+
+                fragment.appendChild(this.createSortableStatsTableSection({
+                    title: 'Track Breakdown',
+                    columns: [
+                        { key: 'name', label: 'Track' },
+                        { key: 'races', label: 'Races', className: 'numeric', defaultDir: 'desc' },
+                        { key: 'avgPosition', label: 'Avg Pos', className: 'numeric', defaultDir: 'asc', render: row => row.avgPosition.toFixed(2) },
+                        { key: 'winRate', label: 'Win %', className: 'numeric', defaultDir: 'desc', render: row => row.winRate.toFixed(1) },
+                        { key: 'podiumRate', label: 'Podium %', className: 'numeric', defaultDir: 'desc', render: row => row.podiumRate.toFixed(1) },
+                        { key: 'crashRate', label: 'Crash %', className: 'numeric', defaultDir: 'asc', render: row => row.crashRate.toFixed(1) },
+                        {
+                            key: 'bestLap',
+                            label: 'Best Lap',
+                            className: 'numeric',
+                            defaultDir: 'asc',
+                            sortValue: row => Number.isFinite(row.bestLap) ? row.bestLap : null,
+                            render: row => Number.isFinite(row.bestLap) ? Utils.formatTime(row.bestLap, true) : '-'
+                        }
+                    ],
+                    rows: trackStats,
+                    defaultSortKey: 'races',
+                    defaultSortDir: 'desc',
+                    emptyMessage: 'No track-specific data.'
+                }));
+
+                fragment.appendChild(this.createSortableStatsTableSection({
+                    title: 'Car Breakdown',
+                    columns: [
+                        { key: 'name', label: 'Car' },
+                        { key: 'races', label: 'Races', className: 'numeric', defaultDir: 'desc' },
+                        { key: 'avgPosition', label: 'Avg Pos', className: 'numeric', defaultDir: 'asc', render: row => row.avgPosition.toFixed(2) },
+                        { key: 'winRate', label: 'Win %', className: 'numeric', defaultDir: 'desc', render: row => row.winRate.toFixed(1) },
+                        { key: 'podiumRate', label: 'Podium %', className: 'numeric', defaultDir: 'desc', render: row => row.podiumRate.toFixed(1) },
+                        { key: 'crashRate', label: 'Crash %', className: 'numeric', defaultDir: 'asc', render: row => row.crashRate.toFixed(1) }
+                    ],
+                    rows: carStats,
+                    defaultSortKey: 'races',
+                    defaultSortDir: 'desc',
+                    emptyMessage: 'No car-specific data.'
+                }));
+
+                fragment.appendChild(this.createSortableStatsTableSection({
+                    title: `Recent Official Races (${raceEntries.length})`,
+                    columns: [
+                        { key: 'timestamp', label: 'Date', defaultDir: 'desc', render: row => Utils.formatDate(row.timestamp, true) },
+                        { key: 'trackName', label: 'Track' },
+                        {
+                            key: 'position',
+                            label: 'Pos',
+                            className: 'numeric',
+                            defaultDir: 'asc',
+                            sortValue: row => row.crashed ? Number.POSITIVE_INFINITY : (Number.isFinite(row.position) ? row.position : Number.POSITIVE_INFINITY),
+                            render: row => row.crashed ? 'CR' : (Number.isFinite(row.position) ? String(row.position) : '-')
+                        },
+                        {
+                            key: 'skillGain',
+                            label: 'Skill Δ',
+                            className: 'numeric',
+                            defaultDir: 'desc',
+                            sortValue: row => Number.isFinite(row.skillGain) ? row.skillGain : null,
+                            render: row => this.formatSignedNumber(row.skillGain, 4)
+                        },
+                        {
+                            key: 'bestLap',
+                            label: 'Best Lap',
+                            className: 'numeric',
+                            defaultDir: 'asc',
+                            sortValue: row => Number.isFinite(row.bestLap) ? row.bestLap : null,
+                            render: row => Number.isFinite(row.bestLap) ? Utils.formatTime(row.bestLap, true) : '-'
+                        },
+                        {
+                            key: 'raceTime',
+                            label: 'Race Time',
+                            className: 'numeric',
+                            defaultDir: 'asc',
+                            sortValue: row => Number.isFinite(row.raceTime) ? row.raceTime : null,
+                            render: row => Number.isFinite(row.raceTime) ? Utils.formatTime(row.raceTime, true) : '-'
+                        },
+                        { key: 'carName', label: 'Car' },
+                        { key: 'carClass', label: 'Class', render: row => row.carClass || '-' }
+                    ],
+                    rows: raceEntries,
+                    defaultSortKey: 'timestamp',
+                    defaultSortDir: 'desc',
+                    emptyMessage: 'No recent races available.'
+                }));
+            }
+
+            const records = Array.isArray(userRacingRecords) ? userRacingRecords : [];
+            if (records.length === 0) {
+                fragment.appendChild(this.createPanelMessage('info-msg', 'No personal racing records returned by the API.'));
                 return fragment;
             }
 
-            const overall = processedData.overall;
-            const trackStats = Object.values(processedData.trackStats).sort((a, b) => b.races - a.races);
-            const carStats = Object.values(processedData.carStats).sort((a, b) => b.races - a.races);
+            const trackRecordRows = records.map(record => {
+                const laps = (record.records || []).map(entry => Number(entry?.lap_time)).filter(value => Number.isFinite(value));
+                if (laps.length === 0) return null;
+                const bestLapCs = Math.min(...laps);
+                const worstLapCs = Math.max(...laps);
+                const bestRecord = (record.records || []).find(entry => Number(entry?.lap_time) === bestLapCs) || {};
+                return {
+                    trackName: record.track?.name || `Track ${record.track?.id ?? '?'}`,
+                    bestLapCs,
+                    bestCar: bestRecord.car_name || 'Unknown Car',
+                    entries: laps.length,
+                    spreadCs: worstLapCs - bestLapCs
+                };
+            }).filter(Boolean);
 
-            const analyzedParagraph = document.createElement('p');
-            analyzedParagraph.append('Analyzed ');
-            analyzedParagraph.appendChild(Utils.createElement('strong', { text: String(overall.races) }));
-            analyzedParagraph.append(` official races from ${Utils.formatDate(processedData.firstRaceTime)} to ${Utils.formatDate(processedData.lastRaceTime)}.`);
-            fragment.appendChild(analyzedParagraph);
+            fragment.appendChild(this.createSortableStatsTableSection({
+                title: 'Personal Record Tracks',
+                columns: [
+                    { key: 'trackName', label: 'Track' },
+                    { key: 'bestLapCs', label: 'Best Lap', className: 'numeric', defaultDir: 'asc', render: row => this.formatCentisecondsAsLapTime(row.bestLapCs) },
+                    { key: 'bestCar', label: 'Best Car' },
+                    { key: 'entries', label: 'Record Entries', className: 'numeric', defaultDir: 'desc' },
+                    { key: 'spreadCs', label: 'Spread', className: 'numeric', defaultDir: 'asc', render: row => this.formatCentisecondsAsLapTime(row.spreadCs) }
+                ],
+                rows: trackRecordRows,
+                defaultSortKey: 'bestLapCs',
+                defaultSortDir: 'asc',
+                emptyMessage: 'No personal track records available.'
+            }));
 
-            fragment.appendChild(this.createStatSummaryParagraph([
-                { label: 'Avg Position', value: overall.avgPosition.toFixed(2) },
-                { label: 'Win Rate', value: `${overall.winRate.toFixed(1)}%` },
-                { label: 'Podium Rate', value: `${overall.podiumRate.toFixed(1)}%` },
-                { label: 'Crash Rate', value: `${overall.crashRate.toFixed(1)}%` }
-            ]));
+            const carMap = {};
+            records.forEach(record => {
+                (record.records || []).forEach(entry => {
+                    const carName = entry?.car_name || 'Unknown Car';
+                    const lapTime = Number(entry?.lap_time);
+                    if (!carMap[carName]) {
+                        carMap[carName] = { carName, entries: 0, bestLapCs: Number.POSITIVE_INFINITY, totalLapCs: 0, lapCount: 0 };
+                    }
+                    carMap[carName].entries++;
+                    if (Number.isFinite(lapTime)) {
+                        carMap[carName].bestLapCs = Math.min(carMap[carName].bestLapCs, lapTime);
+                        carMap[carName].totalLapCs += lapTime;
+                        carMap[carName].lapCount++;
+                    }
+                });
+            });
+            const carRecordRows = Object.values(carMap).map(row => ({
+                ...row,
+                avgLapCs: row.lapCount > 0 ? row.totalLapCs / row.lapCount : null
+            }));
 
-            fragment.appendChild(Utils.createElement('h4', { text: 'Performance by Track' }));
-            if (trackStats.length > 0) {
-                fragment.appendChild(this.createChartContainer('trackPerformanceChart'));
-                fragment.appendChild(this.createStatsTable(
-                    [
-                        { text: 'Track' },
-                        { text: 'Races', className: 'numeric' },
-                        { text: 'Avg Pos', className: 'numeric' },
-                        { text: 'Win %', className: 'numeric' },
-                        { text: 'Podium %', className: 'numeric' },
-                        { text: 'Crash %', className: 'numeric' },
-                        { text: 'Best Lap', className: 'numeric' }
-                    ],
-                    trackStats.map(trackStat => ({
-                        cells: [
-                            { text: trackStat.name },
-                            { text: String(trackStat.races), className: 'numeric' },
-                            { text: trackStat.avgPosition.toFixed(2), className: 'numeric' },
-                            { text: trackStat.winRate.toFixed(1), className: 'numeric' },
-                            { text: trackStat.podiumRate.toFixed(1), className: 'numeric' },
-                            { text: trackStat.crashRate.toFixed(1), className: 'numeric' },
-                            { text: trackStat.bestLap === Infinity ? '-' : `${trackStat.bestLap.toFixed(2)}s`, className: 'numeric' }
-                        ]
-                    }))
-                ));
-            } else {
-                fragment.appendChild(Utils.createElement('p', { text: 'No track-specific data.' }));
-            }
-
-            fragment.appendChild(Utils.createElement('h4', { text: 'Performance by Car' }));
-            if (carStats.length > 0) {
-                fragment.appendChild(this.createChartContainer('carPerformanceChart'));
-                fragment.appendChild(this.createStatsTable(
-                    [
-                        { text: 'Car' },
-                        { text: 'Races', className: 'numeric' },
-                        { text: 'Avg Pos', className: 'numeric' },
-                        { text: 'Win %', className: 'numeric' },
-                        { text: 'Podium %', className: 'numeric' },
-                        { text: 'Crash %', className: 'numeric' }
-                    ],
-                    carStats.map(carStat => ({
-                        cells: [
-                            { text: carStat.name },
-                            { text: String(carStat.races), className: 'numeric' },
-                            { text: carStat.avgPosition.toFixed(2), className: 'numeric' },
-                            { text: carStat.winRate.toFixed(1), className: 'numeric' },
-                            { text: carStat.podiumRate.toFixed(1), className: 'numeric' },
-                            { text: carStat.crashRate.toFixed(1), className: 'numeric' }
-                        ]
-                    }))
-                ));
-            } else {
-                fragment.appendChild(Utils.createElement('p', { text: 'No car-specific data.' }));
-            }
+            fragment.appendChild(this.createSortableStatsTableSection({
+                title: 'Cars In Personal Records',
+                columns: [
+                    { key: 'carName', label: 'Car' },
+                    { key: 'entries', label: 'Entries', className: 'numeric', defaultDir: 'desc' },
+                    {
+                        key: 'bestLapCs',
+                        label: 'Best Lap',
+                        className: 'numeric',
+                        defaultDir: 'asc',
+                        sortValue: row => Number.isFinite(row.bestLapCs) ? row.bestLapCs : null,
+                        render: row => Number.isFinite(row.bestLapCs) ? this.formatCentisecondsAsLapTime(row.bestLapCs) : '-'
+                    },
+                    {
+                        key: 'avgLapCs',
+                        label: 'Avg Lap',
+                        className: 'numeric',
+                        defaultDir: 'asc',
+                        sortValue: row => Number.isFinite(row.avgLapCs) ? row.avgLapCs : null,
+                        render: row => Number.isFinite(row.avgLapCs) ? this.formatCentisecondsAsLapTime(row.avgLapCs) : '-'
+                    }
+                ],
+                rows: carRecordRows,
+                defaultSortKey: 'entries',
+                defaultSortDir: 'desc',
+                emptyMessage: 'No car record data available.'
+            }));
 
             return fragment;
         },
@@ -668,7 +957,6 @@
 
                 fragment.appendChild(Utils.createElement('h4', { text: 'Top Performing Cars Analysis' }));
                 if (topCarsData && topCarsData.length > 0) {
-                    fragment.appendChild(this.createChartContainer('topCarsChart'));
                     fragment.appendChild(this.createStatsTable(
                         [
                             { text: 'Car' },
@@ -712,100 +1000,6 @@
             }
 
             return fragment;
-        },
-        renderStatsCharts(processedData, topCarsData, trackRecordCount = 0) {
-            const textColor = getComputedStyle(document.documentElement).getPropertyValue('--text-color').trim();
-            const gridColor = 'rgba(255, 255, 255, 0.1)';
-            const chartOptionsBase = {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: { legend: { labels: { color: textColor } }, tooltip: { mode: 'index', intersect: false } }
-            };
-            const barColors = ['#64B5F6', '#81C784', '#FFB74D', '#E57373', '#BA68C8', '#FFF176', '#7986CB', '#4DD0E1', '#FF8A65', '#A1887F'];
-
-            if (processedData?.trackStats && Object.keys(processedData.trackStats).length > 0) {
-                const ctxTrack = document.getElementById('trackPerformanceChart')?.getContext('2d');
-                if (ctxTrack) {
-                    const trackStats = Object.values(processedData.trackStats).sort((a, b) => b.races - a.races).slice(0, 10);
-                    Utils.createChart(ctxTrack, {
-                        type: 'bar',
-                        data: {
-                            labels: trackStats.map(t => t.name.length > 15 ? `${t.name.substring(0, 12)}...` : t.name),
-                            datasets: [
-                                { label: 'Win %', data: trackStats.map(t => t.winRate), backgroundColor: barColors[0], yAxisID: 'yPercent' },
-                                { label: 'Podium %', data: trackStats.map(t => t.podiumRate), backgroundColor: barColors[1], yAxisID: 'yPercent' },
-                                { label: 'Crash %', data: trackStats.map(t => t.crashRate), backgroundColor: barColors[3], yAxisID: 'yPercent' },
-                                { label: 'Races', data: trackStats.map(t => t.races), backgroundColor: barColors[4], yAxisID: 'yRaces' }
-                            ]
-                        },
-                        options: {
-                            ...chartOptionsBase,
-                            scales: {
-                                x: { ticks: { color: textColor, autoSkip: false, maxRotation: 90, minRotation: 45 }, grid: { color: gridColor }, title: { color: textColor } },
-                                yPercent: { type: 'linear', position: 'left', beginAtZero: true, title: { display: true, text: 'Percentage (%)', color: textColor }, ticks: { color: textColor }, grid: { color: gridColor } },
-                                yRaces: { type: 'linear', position: 'right', beginAtZero: true, title: { display: true, text: 'Races', color: textColor }, ticks: { color: textColor, precision: 0 }, grid: { drawOnChartArea: false } }
-                            }
-                        }
-                    });
-                }
-            }
-
-            if (processedData?.carStats && Object.keys(processedData.carStats).length > 0) {
-                const ctxCar = document.getElementById('carPerformanceChart')?.getContext('2d');
-                if (ctxCar) {
-                    const carStats = Object.values(processedData.carStats).sort((a, b) => b.races - a.races).slice(0, 10);
-                    Utils.createChart(ctxCar, {
-                        type: 'bar',
-                        data: {
-                            labels: carStats.map(c => c.name.length > 15 ? `${c.name.substring(0, 12)}...` : c.name),
-                            datasets: [
-                                { label: 'Win %', data: carStats.map(c => c.winRate), backgroundColor: barColors[0], yAxisID: 'yPercent' },
-                                { label: 'Podium %', data: carStats.map(c => c.podiumRate), backgroundColor: barColors[1], yAxisID: 'yPercent' },
-                                { label: 'Crash %', data: carStats.map(c => c.crashRate), backgroundColor: barColors[3], yAxisID: 'yPercent' },
-                                { label: 'Races', data: carStats.map(c => c.races), backgroundColor: barColors[4], yAxisID: 'yRaces' }
-                            ]
-                        },
-                        options: {
-                            ...chartOptionsBase,
-                            scales: {
-                                x: { ticks: { color: textColor, autoSkip: false, maxRotation: 90, minRotation: 45 }, grid: { color: gridColor }, title: { color: textColor } },
-                                yPercent: { type: 'linear', position: 'left', beginAtZero: true, title: { display: true, text: 'Percentage (%)', color: textColor }, ticks: { color: textColor }, grid: { color: gridColor } },
-                                yRaces: { type: 'linear', position: 'right', beginAtZero: true, title: { display: true, text: 'Races', color: textColor }, ticks: { color: textColor, precision: 0 }, grid: { drawOnChartArea: false } }
-                            }
-                        }
-                    });
-                }
-            }
-
-            if (topCarsData && topCarsData.length > 0) {
-                const ctxTopCars = document.getElementById('topCarsChart')?.getContext('2d');
-                if (ctxTopCars) {
-                    const topCars = topCarsData.slice(0, 10);
-                    Utils.createChart(ctxTopCars, {
-                        type: 'bar',
-                        data: {
-                            labels: topCars.map(c => c.car_item_name.length > 15 ? `${c.car_item_name.substring(0, 12)}...` : c.car_item_name),
-                            datasets: [{
-                                label: `Times in Top ${trackRecordCount || '?'} Records`,
-                                data: topCars.map(c => c.count),
-                                backgroundColor: barColors.slice(0, topCars.length)
-                            }]
-                        },
-                        options: {
-                            ...chartOptionsBase,
-                            indexAxis: 'y',
-                            scales: {
-                                x: { ticks: { color: textColor, precision: 0 }, grid: { color: gridColor }, title: { color: textColor } },
-                                y: { ticks: { color: textColor }, grid: { color: gridColor }, title: { color: textColor } }
-                            },
-                            plugins: {
-                                legend: { display: false },
-                                tooltip: { mode: 'index', intersect: false }
-                            }
-                        }
-                    });
-                }
-            }
         },
         parseCurrentUserCarStats() {
             const carDiv = document.querySelector('div.car-selected.left');
@@ -1079,7 +1273,6 @@
         async createHistoryPanel() {
             if (!Config.get('historyEnabled')) return;
             if (State.historyPanelInstance) State.historyPanelInstance.remove();
-            State.destroyActiveCharts();
 
             const popup = document.createElement('div');
             popup.className = 'history-panel';
@@ -1125,7 +1318,6 @@
             const closePanel = () => {
                 popup.remove();
                 State.historyPanelInstance = null;
-                State.destroyActiveCharts();
             };
             content.querySelector('.history-close').addEventListener('click', closePanel);
             popup.addEventListener('click', e => { if (e.target === popup) closePanel(); });
