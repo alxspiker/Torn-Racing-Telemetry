@@ -11,7 +11,7 @@
             maxAnimationDurationMs: 1000
         },
         data: {},
-        storageKey: 'racingCustomUITelemetryConfig_v3.1.3', //never change or delete this comment unless absolutely game breaking update
+        storageKey: 'racingCustomUITelemetryConfig_v3.5.0', //never change or delete this comment unless absolutely game breaking update
         apiKeyStorageKey: 'racingCustomUITelemetryApiKey_persistent',
 
         load() {
