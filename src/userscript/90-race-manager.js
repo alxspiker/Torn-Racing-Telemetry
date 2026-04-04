@@ -303,8 +303,7 @@
                         Config.get('animateChanges') &&
                         driverState &&
                         !driverState.firstUpdate &&
-                        (displayOptions.includes('speed') || displayOptions.includes('acceleration')) &&
-                        !displayOptions.includes('progress');
+                        (displayOptions.includes('speed') || displayOptions.includes('acceleration'));
 
                     if (canAnimate) {
                         const fromSpeed = telemetryDiv._currentAnimSpeed !== undefined
@@ -330,7 +329,8 @@
                                 animationDuration,
                                 animationMode,
                                 speedUnit,
-                                lapEstimateText
+                                lapEstimateText,
+                                displayOptions.includes('progress') ? `${driverData.progress.toFixed(1)}%` : ''
                             );
                         } else {
                             if (telemetryDiv._animationRAF) {

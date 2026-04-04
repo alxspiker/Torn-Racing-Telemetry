@@ -426,10 +426,11 @@
             driverState.smoothedLapEstimate = smoothedEstimate;
             return smoothedEstimate;
         },
-        animateTelemetry(element, fromSpeed, toSpeed, fromAcc, toAcc, duration, displayMode, speedUnit, lapEstimateText) {
+        animateTelemetry(element, fromSpeed, toSpeed, fromAcc, toAcc, duration, displayMode, speedUnit, lapEstimateText, progressText = '') {
             let startTime = null;
             const easeFunction = this.easeInOutQuad;
             const getColor = this.getTelemetryColor.bind(this);
+            const withProgress = (baseText) => progressText ? `${baseText} | ${progressText}` : baseText;
 
             fromSpeed = Number(fromSpeed) || 0;
             toSpeed = Number(toSpeed) || 0;
@@ -455,7 +456,7 @@
                 else if (displayMode === 'acceleration') { text = `${currentAcc.toFixed(1)} g`; }
                 else if (displayMode === 'both') { text = `${Math.round(currentSpeed)} ${speedUnit} | ${currentAcc.toFixed(1)} g`; }
 
-                Telemetry.setTelemetryDisplay(element, text, color, lapEstimateText);
+                Telemetry.setTelemetryDisplay(element, withProgress(text), color, lapEstimateText);
 
                 if (linearProgress < 1) {
                     element._animationRAF = requestAnimationFrame(step);
@@ -467,7 +468,7 @@
                     if (displayMode === 'speed') { finalText = finalSpeedText; }
                     else if (displayMode === 'acceleration') { finalText = finalAccelText; }
                     else if (displayMode === 'both') { finalText = `${finalSpeedText} | ${finalAccelText}`; }
-                    Telemetry.setTelemetryDisplay(element, finalText, Config.get('colorCode') ? getColor(toAcc) : 'var(--telemetry-default-color)', lapEstimateText);
+                    Telemetry.setTelemetryDisplay(element, withProgress(finalText), Config.get('colorCode') ? getColor(toAcc) : 'var(--telemetry-default-color)', lapEstimateText);
                     element._currentAnimSpeed = undefined;
                     element._currentAnimAcc = undefined;
                 }
@@ -545,7 +546,7 @@
             settingsContent.appendChild(createSettingsItem({ control: createToggleControl('colorCode', 'Color Code Telemetry (by Accel)') }));
             settingsContent.appendChild(createSettingsItem({
                 control: createToggleControl('animateChanges', 'Animate Changes (Simple Cases)'),
-                helpText: 'Animation only applies if just Speed, just Accel, or only Speed & Accel are shown. Uses capped duration.'
+                helpText: 'Smoothly animates telemetry value changes between updates.'
             }));
 
             settingsContent.appendChild(createSettingsItem({
@@ -2703,8 +2704,7 @@
                         Config.get('animateChanges') &&
                         driverState &&
                         !driverState.firstUpdate &&
-                        (displayOptions.includes('speed') || displayOptions.includes('acceleration')) &&
-                        !displayOptions.includes('progress');
+                        (displayOptions.includes('speed') || displayOptions.includes('acceleration'));
 
                     if (canAnimate) {
                         const fromSpeed = telemetryDiv._currentAnimSpeed !== undefined
@@ -2730,7 +2730,8 @@
                                 animationDuration,
                                 animationMode,
                                 speedUnit,
-                                lapEstimateText
+                                lapEstimateText,
+                                displayOptions.includes('progress') ? `${driverData.progress.toFixed(1)}%` : ''
                             );
                         } else {
                             if (telemetryDiv._animationRAF) {

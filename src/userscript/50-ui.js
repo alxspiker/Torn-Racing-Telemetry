@@ -63,7 +63,7 @@
             settingsContent.appendChild(createSettingsItem({ control: createToggleControl('colorCode', 'Color Code Telemetry (by Accel)') }));
             settingsContent.appendChild(createSettingsItem({
                 control: createToggleControl('animateChanges', 'Animate Changes (Simple Cases)'),
-                helpText: 'Animation only applies if just Speed, just Accel, or only Speed & Accel are shown. Uses capped duration.'
+                helpText: 'Smoothly animates telemetry value changes between updates.'
             }));
 
             settingsContent.appendChild(createSettingsItem({
