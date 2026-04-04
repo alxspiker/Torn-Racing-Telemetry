@@ -50,7 +50,7 @@
                 Utils.showNotification('Torn PDA API key automatically configured.', 'success');
             }
 
-            HistoryManager.loadLog();
+            await HistoryManager.loadLog();
 
             State.originalLeaderboard = document.getElementById('leaderBoard');
             const originalScrollbarContainer = document.getElementById('drivers-scrollbar');

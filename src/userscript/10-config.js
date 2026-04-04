@@ -58,13 +58,12 @@
                 this.save();
             }
         },
-        clearData() {
+        async clearData() {
             const currentApiKey = GM_getValue(this.apiKeyStorageKey, '');
             this.data = { ...this.defaults };
             this.data.apiKey = currentApiKey;
             this.save();
-            GM_deleteValue(HistoryManager.logStorageKey);
-            HistoryManager.loadLog();
+            await HistoryManager.clearLog();
         },
         clearApiKey() {
              this.data.apiKey = '';

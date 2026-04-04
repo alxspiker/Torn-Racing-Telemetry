@@ -110,7 +110,7 @@
             content.querySelector('.toggle-telemetry-btn').addEventListener('click', (e) => { const newState = !Config.get('telemetryVisible'); Config.set('telemetryVisible', newState); document.body.classList.toggle('telemetry-hidden', !newState); e.target.textContent = newState ? 'Hide Telemetry' : 'Show Telemetry'; Utils.showNotification(`Telemetry display ${newState ? 'shown' : 'hidden'}.`); });
             content.querySelector('#hideOriginalList').addEventListener('change', (e) => { const hide = e.target.checked; Config.set('hideOriginalList', hide); document.body.classList.toggle('hide-original-leaderboard', hide); if (!hide) { RaceManager.stableUpdateCustomList(); }});
 
-            content.querySelector('#saveSettings').addEventListener('click', () => {
+            content.querySelector('#saveSettings').addEventListener('click', async () => {
                 const historyWasEnabled = Config.get('historyEnabled');
 
                 const selectedOptions = [];
@@ -146,6 +146,7 @@
                 let histLimit = parseInt(content.querySelector('#historyLogLimit').value, 10);
                 if (isNaN(histLimit) || histLimit < 5 || histLimit > 50) { histLimit = Config.defaults.historyLogLimit; content.querySelector('#historyLogLimit').value = histLimit; Utils.showNotification('Invalid History Limit, reset to default.', 'error'); }
                 Config.set('historyLogLimit', histLimit);
+                await HistoryManager.refreshLogCache();
                 Utils.showNotification('Settings saved!', 'success');
                 closePopup();
                 UI.updateControlButtonsVisibility();
@@ -158,12 +159,12 @@
                 RaceManager.stableUpdateCustomList();
             });
 
-            content.querySelector('#clearData').addEventListener('click', () => {
+            content.querySelector('#clearData').addEventListener('click', async () => {
                  if (confirm('Are you sure you want to clear all script settings (except API key) and history data? This cannot be undone.')) {
-                     Config.clearData();
-                     Utils.showNotification('Script data cleared!', 'success');
-                     closePopup();
-                     UI.updateControlButtonsVisibility();
+                     await Config.clearData();
+                      Utils.showNotification('Script data cleared!', 'success');
+                      closePopup();
+                      UI.updateControlButtonsVisibility();
                      RaceManager.stableUpdateCustomList();
                      HistoryManager.restartCheckInterval();
                  }
@@ -526,9 +527,9 @@
             const clearButton = document.createElement('button');
             clearButton.className = 'history-clear-button';
             clearButton.textContent = 'Clear History Log';
-            clearButton.addEventListener('click', () => {
+            clearButton.addEventListener('click', async () => {
                 if (confirm('Are you sure you want to clear your entire racing stats history log? This cannot be undone.')) {
-                    HistoryManager.clearLog();
+                    await HistoryManager.clearLog();
                     this.createHistoryPanel();
                     Utils.showNotification('History log cleared!', 'success');
                 }
@@ -536,10 +537,11 @@
             actionsDiv.appendChild(clearButton);
             const exportButton = document.createElement('button');
             exportButton.textContent = 'Export History';
-            exportButton.addEventListener('click', () => {
+            exportButton.addEventListener('click', async () => {
                 const format = prompt('Export as (csv/json):') || 'csv';
-                let dataStr = format === 'json' ? JSON.stringify(HistoryManager.getLog(), null, 2) :
-                              'Timestamp,Skill,Class,Points\n' + HistoryManager.getLog().map(e => `${Utils.formatDate(e.timestamp, true)},${e.skill},${e.class},${e.points}`).join('\n');
+                const fullHistoryLog = await HistoryManager.getFullLog();
+                let dataStr = format === 'json' ? JSON.stringify(fullHistoryLog, null, 2) :
+                              'Timestamp,Skill,Class,Points\n' + fullHistoryLog.map(e => `${Utils.formatDate(e.timestamp, true)},${e.skill},${e.class},${e.points}`).join('\n');
                 DataExporter.downloadData(dataStr, format, `text/${format}`);
             });
             actionsDiv.appendChild(exportButton);

@@ -135,13 +135,12 @@
                 this.save();
             }
         },
-        clearData() {
+        async clearData() {
             const currentApiKey = GM_getValue(this.apiKeyStorageKey, '');
             this.data = { ...this.defaults };
             this.data.apiKey = currentApiKey;
             this.save();
-            GM_deleteValue(HistoryManager.logStorageKey);
-            HistoryManager.loadLog();
+            await HistoryManager.clearLog();
         },
         clearApiKey() {
              this.data.apiKey = '';
@@ -682,7 +681,7 @@
             content.querySelector('.toggle-telemetry-btn').addEventListener('click', (e) => { const newState = !Config.get('telemetryVisible'); Config.set('telemetryVisible', newState); document.body.classList.toggle('telemetry-hidden', !newState); e.target.textContent = newState ? 'Hide Telemetry' : 'Show Telemetry'; Utils.showNotification(`Telemetry display ${newState ? 'shown' : 'hidden'}.`); });
             content.querySelector('#hideOriginalList').addEventListener('change', (e) => { const hide = e.target.checked; Config.set('hideOriginalList', hide); document.body.classList.toggle('hide-original-leaderboard', hide); if (!hide) { RaceManager.stableUpdateCustomList(); }});
 
-            content.querySelector('#saveSettings').addEventListener('click', () => {
+            content.querySelector('#saveSettings').addEventListener('click', async () => {
                 const historyWasEnabled = Config.get('historyEnabled');
 
                 const selectedOptions = [];
@@ -718,6 +717,7 @@
                 let histLimit = parseInt(content.querySelector('#historyLogLimit').value, 10);
                 if (isNaN(histLimit) || histLimit < 5 || histLimit > 50) { histLimit = Config.defaults.historyLogLimit; content.querySelector('#historyLogLimit').value = histLimit; Utils.showNotification('Invalid History Limit, reset to default.', 'error'); }
                 Config.set('historyLogLimit', histLimit);
+                await HistoryManager.refreshLogCache();
                 Utils.showNotification('Settings saved!', 'success');
                 closePopup();
                 UI.updateControlButtonsVisibility();
@@ -730,12 +730,12 @@
                 RaceManager.stableUpdateCustomList();
             });
 
-            content.querySelector('#clearData').addEventListener('click', () => {
+            content.querySelector('#clearData').addEventListener('click', async () => {
                  if (confirm('Are you sure you want to clear all script settings (except API key) and history data? This cannot be undone.')) {
-                     Config.clearData();
-                     Utils.showNotification('Script data cleared!', 'success');
-                     closePopup();
-                     UI.updateControlButtonsVisibility();
+                     await Config.clearData();
+                      Utils.showNotification('Script data cleared!', 'success');
+                      closePopup();
+                      UI.updateControlButtonsVisibility();
                      RaceManager.stableUpdateCustomList();
                      HistoryManager.restartCheckInterval();
                  }
@@ -1098,9 +1098,9 @@
             const clearButton = document.createElement('button');
             clearButton.className = 'history-clear-button';
             clearButton.textContent = 'Clear History Log';
-            clearButton.addEventListener('click', () => {
+            clearButton.addEventListener('click', async () => {
                 if (confirm('Are you sure you want to clear your entire racing stats history log? This cannot be undone.')) {
-                    HistoryManager.clearLog();
+                    await HistoryManager.clearLog();
                     this.createHistoryPanel();
                     Utils.showNotification('History log cleared!', 'success');
                 }
@@ -1108,10 +1108,11 @@
             actionsDiv.appendChild(clearButton);
             const exportButton = document.createElement('button');
             exportButton.textContent = 'Export History';
-            exportButton.addEventListener('click', () => {
+            exportButton.addEventListener('click', async () => {
                 const format = prompt('Export as (csv/json):') || 'csv';
-                let dataStr = format === 'json' ? JSON.stringify(HistoryManager.getLog(), null, 2) :
-                              'Timestamp,Skill,Class,Points\n' + HistoryManager.getLog().map(e => `${Utils.formatDate(e.timestamp, true)},${e.skill},${e.class},${e.points}`).join('\n');
+                const fullHistoryLog = await HistoryManager.getFullLog();
+                let dataStr = format === 'json' ? JSON.stringify(fullHistoryLog, null, 2) :
+                              'Timestamp,Skill,Class,Points\n' + fullHistoryLog.map(e => `${Utils.formatDate(e.timestamp, true)},${e.skill},${e.class},${e.points}`).join('\n');
                 DataExporter.downloadData(dataStr, format, `text/${format}`);
             });
             actionsDiv.appendChild(exportButton);
@@ -1959,49 +1960,372 @@
         }
     };
 
+    const HistoryStore = {
+        dbName: 'TornRacingTelemetry',
+        dbVersion: 1,
+        storeName: 'historyLogEntries',
+        dbPromise: null,
+
+        isSupported() {
+            return typeof window.indexedDB !== 'undefined';
+        },
+        normalizeEntry(entry) {
+            if (!entry || typeof entry !== 'object') return null;
+
+            const timestamp = Number(entry.timestamp);
+            if (!Number.isFinite(timestamp) || timestamp <= 0) return null;
+
+            const skill = (typeof entry.skill === 'number' && Number.isFinite(entry.skill)) ? entry.skill : null;
+            const className = (typeof entry.class === 'string' && entry.class.trim()) ? entry.class.trim().toUpperCase() : null;
+            const points = (typeof entry.points === 'number' && Number.isFinite(entry.points)) ? entry.points : null;
+
+            return { timestamp, skill, class: className, points };
+        },
+        open() {
+            if (!this.isSupported()) {
+                return Promise.reject(new Error('IndexedDB is not available in this environment.'));
+            }
+            if (this.dbPromise) {
+                return this.dbPromise;
+            }
+
+            this.dbPromise = new Promise((resolve, reject) => {
+                const request = window.indexedDB.open(this.dbName, this.dbVersion);
+
+                request.onupgradeneeded = () => {
+                    const db = request.result;
+                    const store = db.objectStoreNames.contains(this.storeName)
+                        ? request.transaction.objectStore(this.storeName)
+                        : db.createObjectStore(this.storeName, { keyPath: 'id', autoIncrement: true });
+
+                    if (!store.indexNames.contains('timestamp')) {
+                        store.createIndex('timestamp', 'timestamp');
+                    }
+                };
+
+                request.onsuccess = () => {
+                    const db = request.result;
+                    db.onversionchange = () => {
+                        db.close();
+                        this.dbPromise = null;
+                    };
+                    resolve(db);
+                };
+
+                request.onerror = () => {
+                    this.dbPromise = null;
+                    reject(request.error || new Error('Failed to open IndexedDB.'));
+                };
+            });
+
+            return this.dbPromise;
+        },
+        async countEntries() {
+            const db = await this.open();
+            return new Promise((resolve, reject) => {
+                const request = db.transaction(this.storeName, 'readonly').objectStore(this.storeName).count();
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => reject(request.error || new Error('Failed to count history entries.'));
+            });
+        },
+        async getEntries(limit = null) {
+            const db = await this.open();
+            const normalizedLimit = (limit === null || typeof limit === 'undefined') ? null : Math.max(0, Number(limit) || 0);
+
+            return new Promise((resolve, reject) => {
+                const entries = [];
+                let settled = false;
+                const tx = db.transaction(this.storeName, 'readonly');
+                const request = tx.objectStore(this.storeName).index('timestamp').openCursor(null, 'prev');
+
+                const finish = (value) => {
+                    if (!settled) {
+                        settled = true;
+                        resolve(value);
+                    }
+                };
+                const fail = (error) => {
+                    if (!settled) {
+                        settled = true;
+                        reject(error);
+                    }
+                };
+
+                request.onsuccess = () => {
+                    const cursor = request.result;
+                    if (!cursor || (normalizedLimit !== null && entries.length >= normalizedLimit)) {
+                        finish(entries);
+                        return;
+                    }
+
+                    const entry = this.normalizeEntry(cursor.value);
+                    if (entry) {
+                        entries.push(entry);
+                    }
+                    cursor.continue();
+                };
+
+                request.onerror = () => fail(request.error || new Error('Failed to read history entries.'));
+                tx.onabort = () => fail(tx.error || new Error('History read transaction aborted.'));
+            });
+        },
+        async getRecentEntries(limit) {
+            return this.getEntries(limit);
+        },
+        async getAllEntries() {
+            return this.getEntries(null);
+        },
+        async addEntry(entry) {
+            const normalizedEntry = this.normalizeEntry(entry);
+            if (!normalizedEntry) {
+                return;
+            }
+
+            const db = await this.open();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(this.storeName, 'readwrite');
+                tx.objectStore(this.storeName).add(normalizedEntry);
+                tx.oncomplete = () => resolve();
+                tx.onabort = () => reject(tx.error || new Error('History write transaction aborted.'));
+                tx.onerror = () => reject(tx.error || new Error('Failed to write history entry.'));
+            });
+        },
+        async importEntries(entries) {
+            const normalizedEntries = Array.isArray(entries)
+                ? entries.map(entry => this.normalizeEntry(entry)).filter(Boolean)
+                : [];
+
+            if (normalizedEntries.length === 0) {
+                return 0;
+            }
+
+            const db = await this.open();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(this.storeName, 'readwrite');
+                const store = tx.objectStore(this.storeName);
+
+                normalizedEntries.forEach(entry => {
+                    store.add(entry);
+                });
+
+                tx.oncomplete = () => resolve(normalizedEntries.length);
+                tx.onabort = () => reject(tx.error || new Error('History migration transaction aborted.'));
+                tx.onerror = () => reject(tx.error || new Error('Failed to migrate history entries.'));
+            });
+        },
+        async clearEntries() {
+            const db = await this.open();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(this.storeName, 'readwrite');
+                tx.objectStore(this.storeName).clear();
+                tx.oncomplete = () => resolve();
+                tx.onabort = () => reject(tx.error || new Error('History clear transaction aborted.'));
+                tx.onerror = () => reject(tx.error || new Error('Failed to clear history entries.'));
+            });
+        },
+        async migrateLegacyLog(legacyKey) {
+            const entryCount = await this.countEntries();
+            const legacyLog = GM_getValue(legacyKey, null);
+
+            if (entryCount > 0) {
+                if (legacyLog !== null && typeof legacyLog !== 'undefined') {
+                    GM_deleteValue(legacyKey);
+                }
+                return 0;
+            }
+
+            if (legacyLog === null || typeof legacyLog === 'undefined') {
+                return 0;
+            }
+
+            let parsedLog = legacyLog;
+            if (typeof legacyLog === 'string') {
+                try {
+                    parsedLog = JSON.parse(legacyLog);
+                } catch (e) {
+                    GM_setValue(legacyKey, '[]');
+                    return 0;
+                }
+            }
+
+            if (!Array.isArray(parsedLog) || parsedLog.length === 0) {
+                GM_deleteValue(legacyKey);
+                return 0;
+            }
+
+            const importedCount = await this.importEntries(parsedLog);
+            GM_deleteValue(legacyKey);
+            return importedCount;
+        }
+    };
+
     const HistoryManager = {
         logStorageKey: 'racingHistoryLog_v3.1.0',
+        storageMode: 'legacy',
+        isLoaded: false,
+        isChecking: false,
+        loadPromise: null,
 
-        loadLog() {
+        updateLastKnownValues() {
+            const latest = State.historyLog[0] || null;
+            State.lastKnownSkill = latest ? latest.skill : null;
+            State.lastKnownClass = latest ? latest.class : null;
+            State.lastKnownPoints = latest ? latest.points : null;
+        },
+        applyLogEntries(entries) {
+            State.historyLog = Array.isArray(entries) ? [...entries] : [];
+            this.updateLastKnownValues();
+        },
+        loadLegacyLog() {
             try {
                 const storedLog = GM_getValue(this.logStorageKey, '[]');
-                State.historyLog = JSON.parse(storedLog);
-                if (State.historyLog.length > 0) {
-                    const latest = State.historyLog[0];
-                    State.lastKnownSkill = latest.skill;
-                    State.lastKnownClass = latest.class;
-                    State.lastKnownPoints = latest.points;
-                } else {
-                    State.lastKnownSkill = null;
-                    State.lastKnownClass = null;
-                    State.lastKnownPoints = null;
-                }
+                const parsedLog = typeof storedLog === 'string'
+                    ? JSON.parse(storedLog)
+                    : (Array.isArray(storedLog) ? storedLog : []);
+                const historyLimit = Config.get('historyLogLimit');
+                const recentEntries = Array.isArray(parsedLog)
+                    ? parsedLog
+                        .map(entry => HistoryStore.normalizeEntry(entry))
+                        .filter(Boolean)
+                        .sort((left, right) => right.timestamp - left.timestamp)
+                        .slice(0, historyLimit)
+                    : [];
+
+                this.applyLogEntries(recentEntries);
             } catch (e) {
-                State.historyLog = [];
-                State.lastKnownSkill = null;
-                State.lastKnownClass = null;
-                State.lastKnownPoints = null;
+                this.applyLogEntries([]);
                 GM_setValue(this.logStorageKey, '[]');
             }
         },
-        saveLog() {
+        saveLegacyLog() {
             try {
-                const limit = Config.get('historyLogLimit');
-                if (State.historyLog.length > limit) {
-                    State.historyLog = State.historyLog.slice(0, limit);
-                }
+                const historyLimit = Config.get('historyLogLimit');
+                State.historyLog = State.historyLog.slice(0, historyLimit);
                 GM_setValue(this.logStorageKey, JSON.stringify(State.historyLog));
             } catch (e) {}
+        },
+        async refreshLogCache() {
+            if (this.storageMode === 'indexeddb') {
+                try {
+                    const recentEntries = await HistoryStore.getRecentEntries(Config.get('historyLogLimit'));
+                    this.applyLogEntries(recentEntries);
+                    return;
+                } catch (e) {
+                    console.error('Torn Racing Telemetry: Failed to read history from IndexedDB, falling back to GM storage.', e);
+                    this.storageMode = 'legacy';
+                }
+            }
+
+            this.loadLegacyLog();
+        },
+        async loadLog() {
+            if (this.isLoaded) {
+                return;
+            }
+            if (this.loadPromise) {
+                return this.loadPromise;
+            }
+
+            this.loadPromise = (async () => {
+                if (HistoryStore.isSupported()) {
+                    try {
+                        await HistoryStore.open();
+                        await HistoryStore.migrateLegacyLog(this.logStorageKey);
+                        this.storageMode = 'indexeddb';
+                        await this.refreshLogCache();
+                        this.isLoaded = true;
+                        return;
+                    } catch (e) {
+                        console.error('Torn Racing Telemetry: IndexedDB history storage unavailable, falling back to GM storage.', e);
+                    }
+                }
+
+                this.storageMode = 'legacy';
+                this.loadLegacyLog();
+                this.isLoaded = true;
+            })();
+
+            try {
+                await this.loadPromise;
+            } finally {
+                this.loadPromise = null;
+            }
         },
         getLog() {
             return [...State.historyLog];
         },
-        clearLog() {
-            State.historyLog = [];
-            State.lastKnownSkill = null;
-            State.lastKnownClass = null;
-            State.lastKnownPoints = null;
+        async getFullLog() {
+            if (!this.isLoaded) {
+                await this.loadLog();
+            }
+
+            if (this.storageMode === 'indexeddb') {
+                try {
+                    return await HistoryStore.getAllEntries();
+                } catch (e) {
+                    console.error('Torn Racing Telemetry: Failed to read the full history log from IndexedDB.', e);
+                    this.storageMode = 'legacy';
+                }
+            }
+
+            return this.getLog();
+        },
+        async clearLog() {
+            if (!this.isLoaded && !this.loadPromise) {
+                await this.loadLog();
+            }
+
+            this.applyLogEntries([]);
+
+            if (this.storageMode === 'indexeddb') {
+                try {
+                    await HistoryStore.clearEntries();
+                } catch (e) {
+                    console.error('Torn Racing Telemetry: Failed to clear IndexedDB history storage, falling back to GM storage.', e);
+                    this.storageMode = 'legacy';
+                }
+            }
+
             GM_deleteValue(this.logStorageKey);
+        },
+        prependLogEntry(entry) {
+            const normalizedEntry = HistoryStore.normalizeEntry(entry);
+            if (!normalizedEntry) {
+                return;
+            }
+
+            const historyLimit = Config.get('historyLogLimit');
+            State.historyLog = [
+                normalizedEntry,
+                ...State.historyLog.filter(existing =>
+                    existing.timestamp !== normalizedEntry.timestamp ||
+                    existing.skill !== normalizedEntry.skill ||
+                    existing.class !== normalizedEntry.class ||
+                    existing.points !== normalizedEntry.points
+                )
+            ].slice(0, historyLimit);
+
+            this.updateLastKnownValues();
+        },
+        async persistEntry(entry) {
+            const normalizedEntry = HistoryStore.normalizeEntry(entry);
+            if (!normalizedEntry) {
+                return;
+            }
+
+            if (this.storageMode === 'indexeddb') {
+                try {
+                    await HistoryStore.addEntry(normalizedEntry);
+                    this.prependLogEntry(normalizedEntry);
+                    return;
+                } catch (e) {
+                    console.error('Torn Racing Telemetry: Failed to write history to IndexedDB, falling back to GM storage.', e);
+                    this.storageMode = 'legacy';
+                }
+            }
+
+            this.prependLogEntry(normalizedEntry);
+            this.saveLegacyLog();
         },
         getCurrentSkillAndClass() {
             const skillElement = document.querySelector('div.banner div.skill');
@@ -2011,38 +2335,41 @@
             return { skill: !isNaN(skill) ? skill : null, class: className };
         },
         async checkAndLogUserStats() {
-            if (!Config.get('historyEnabled') || !State.isRaceViewActive || !State.userId) return;
+            if (!Config.get('historyEnabled') || !State.isRaceViewActive || !State.userId || this.isChecking) return;
 
-            const { skill: currentSkill, class: currentClass } = this.getCurrentSkillAndClass();
-            let currentPoints = State.lastKnownPoints;
-
-            if (Utils.isApiKeyAvailable() && !State.isFetchingPoints) {
-                State.isFetchingPoints = true;
-                const apiKey = Config.get('apiKey');
-                try {
-                     const fetchedPoints = await APIManager.fetchUserRacingPoints(apiKey, State.userId);
-                     if (fetchedPoints !== null) currentPoints = fetchedPoints;
-                } catch (e) { }
-                finally { State.isFetchingPoints = false; }
+            if (!this.isLoaded) {
+                await this.loadLog();
             }
 
-            const latestLogEntry = State.historyLog.length > 0 ? State.historyLog[0] : null;
-            const skillChanged = currentSkill !== null && (!latestLogEntry || currentSkill !== latestLogEntry.skill);
-            const classChanged = currentClass !== null && (!latestLogEntry || currentClass !== latestLogEntry.class);
-            const pointsChanged = currentPoints !== null && (!latestLogEntry || currentPoints !== latestLogEntry.points);
+            this.isChecking = true;
+            try {
+                const { skill: currentSkill, class: currentClass } = this.getCurrentSkillAndClass();
+                let currentPoints = State.lastKnownPoints;
 
-            if (!latestLogEntry || skillChanged || classChanged || pointsChanged) {
-                 if (currentSkill !== null || currentClass !== null || currentPoints !== null) {
-                     const newEntry = { timestamp: Date.now(), skill: currentSkill, class: currentClass, points: currentPoints };
-                     State.historyLog.unshift(newEntry);
-                     const limit = Config.get('historyLogLimit');
-                     if (State.historyLog.length > limit) { State.historyLog = State.historyLog.slice(0, limit); }
-                     this.saveLog();
-                     State.lastKnownSkill = currentSkill;
-                     State.lastKnownClass = currentClass;
-                     State.lastKnownPoints = currentPoints;
-                     if (State.historyPanelInstance) { UI.createHistoryPanel(); }
-                 }
+                if (Utils.isApiKeyAvailable() && !State.isFetchingPoints) {
+                    State.isFetchingPoints = true;
+                    const apiKey = Config.get('apiKey');
+                    try {
+                        const fetchedPoints = await APIManager.fetchUserRacingPoints(apiKey, State.userId);
+                        if (fetchedPoints !== null) currentPoints = fetchedPoints;
+                    } catch (e) { }
+                    finally { State.isFetchingPoints = false; }
+                }
+
+                const latestLogEntry = State.historyLog.length > 0 ? State.historyLog[0] : null;
+                const skillChanged = currentSkill !== null && (!latestLogEntry || currentSkill !== latestLogEntry.skill);
+                const classChanged = currentClass !== null && (!latestLogEntry || currentClass !== latestLogEntry.class);
+                const pointsChanged = currentPoints !== null && (!latestLogEntry || currentPoints !== latestLogEntry.points);
+
+                if (!latestLogEntry || skillChanged || classChanged || pointsChanged) {
+                    if (currentSkill !== null || currentClass !== null || currentPoints !== null) {
+                        const newEntry = { timestamp: Date.now(), skill: currentSkill, class: currentClass, points: currentPoints };
+                        await this.persistEntry(newEntry);
+                        if (State.historyPanelInstance) { UI.createHistoryPanel(); }
+                    }
+                }
+            } finally {
+                this.isChecking = false;
             }
         },
         startCheckInterval() {
@@ -2051,11 +2378,11 @@
 
             if (!Config.get('historyEnabled') || !State.isInitialized || !State.isRaceViewActive || !State.userId) return;
 
-            this.checkAndLogUserStats();
+            this.checkAndLogUserStats().catch(() => {});
             const intervalMs = Config.get('historyCheckInterval');
-            State.historyCheckIntervalId = setInterval(() => { this.checkAndLogUserStats(); }, intervalMs);
+            State.historyCheckIntervalId = setInterval(() => { this.checkAndLogUserStats().catch(() => {}); }, intervalMs);
         },
-         restartCheckInterval() {
+        restartCheckInterval() {
             this.startCheckInterval();
         }
     };
@@ -2112,7 +2439,7 @@
                 Utils.showNotification('Torn PDA API key automatically configured.', 'success');
             }
 
-            HistoryManager.loadLog();
+            await HistoryManager.loadLog();
 
             State.originalLeaderboard = document.getElementById('leaderBoard');
             const originalScrollbarContainer = document.getElementById('drivers-scrollbar');
