@@ -4,6 +4,7 @@
         mediaQueryHandler: null,
         applyRafId: null,
         stylesInjected: false,
+        forceDarkTheme: true,
         defaults: {
             text: [224, 224, 224],
             background: [26, 26, 26],
@@ -110,12 +111,28 @@
             return this.parseColor(computed, this.defaults.accent);
         },
         getThemePalette() {
-            const bodyStyle = document.body ? getComputedStyle(document.body) : null;
-            const rootStyle = getComputedStyle(document.documentElement);
-            const background = this.parseColor(bodyStyle?.backgroundColor, this.parseColor(rootStyle.backgroundColor, this.defaults.background));
-            const text = this.parseColor(bodyStyle?.color, this.parseColor(rootStyle.color, this.defaults.text));
-            const accent = this.getAccentColor();
-            const isDark = this.getLuminance(background) < 0.35;
+            let background;
+            let text;
+            let accent;
+            let isDark;
+
+            if (this.forceDarkTheme) {
+                background = this.defaults.background;
+                text = this.defaults.text;
+                accent = this.defaults.accent;
+                isDark = true;
+            } else {
+                const bodyStyle = document.body ? getComputedStyle(document.body) : null;
+                const rootStyle = getComputedStyle(document.documentElement);
+                background = this.parseColor(
+                    bodyStyle?.backgroundColor,
+                    this.parseColor(rootStyle.backgroundColor, this.defaults.background)
+                );
+                text = this.parseColor(bodyStyle?.color, this.parseColor(rootStyle.color, this.defaults.text));
+                accent = this.getAccentColor();
+                isDark = this.getLuminance(background) < 0.35;
+            }
+
             const contrastTarget = isDark ? [255, 255, 255] : [0, 0, 0];
 
             const panelBase = this.mixColors(background, contrastTarget, isDark ? 0.08 : 0.03);

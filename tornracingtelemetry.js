@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn Racing Telemetry
 // @namespace    https://www.torn.com/profiles.php?XID=2782979
-// @version      3.5.0
+// @version      3.5.1
 // @description  Enhanced Torn Racing UI: Telemetry, driver stats, advanced stats panel, history tracking, and race results export.
 // @match        https://www.torn.com/page.php?sid=racing*
 // @match        https://www.torn.com/loader.php?sid=racing*
@@ -21,12 +21,13 @@
     'use strict';
 
     const ScriptInfo = {
-        version: '3.5.0',
+        version: '3.5.1',
         author: "TheProgrammer",
         contactId: "2782979",
         contactUrl: function() { return `https://www.torn.com/profiles.php?XID=${this.contactId}`; },
         description: "Provides enhanced telemetry, stats analysis, historical tracking, and race results export for Torn Racing.",
         notes: [
+            "v3.5.1: Thanks to @CharmRiver[2334174] for reporting the issue. Fixed theme consistency by defaulting telemetry UI panels/cards to the dark palette so layout readability stays stable even when Torn is in light mode.",
             "v3.5.0: Major architecture and panel overhaul. Migrated to modular source + build pipeline, replaced chart-based history/stats views with API-first timeline/cards/tables, added true paginated /user/races sync, redesigned driver dropdown telemetry UI, improved animation behavior (including progress mode), updated panel styling/colors, and removed deprecated dead code paths.",
             "v3.4.2: Thanks to @MikeyJDoug[2137820] for noticing. Fixed a critical error in the stats panel for new users or users with no official race history. The panel will now display a proper message instead of crashing.",
             "v3.4.1: Implemented Race ID capture for unique race identification in logs and exports. Improved User ID detection for better script initialization.",
@@ -3047,6 +3048,7 @@
         mediaQueryHandler: null,
         applyRafId: null,
         stylesInjected: false,
+        forceDarkTheme: true,
         defaults: {
             text: [224, 224, 224],
             background: [26, 26, 26],
@@ -3153,12 +3155,28 @@
             return this.parseColor(computed, this.defaults.accent);
         },
         getThemePalette() {
-            const bodyStyle = document.body ? getComputedStyle(document.body) : null;
-            const rootStyle = getComputedStyle(document.documentElement);
-            const background = this.parseColor(bodyStyle?.backgroundColor, this.parseColor(rootStyle.backgroundColor, this.defaults.background));
-            const text = this.parseColor(bodyStyle?.color, this.parseColor(rootStyle.color, this.defaults.text));
-            const accent = this.getAccentColor();
-            const isDark = this.getLuminance(background) < 0.35;
+            let background;
+            let text;
+            let accent;
+            let isDark;
+
+            if (this.forceDarkTheme) {
+                background = this.defaults.background;
+                text = this.defaults.text;
+                accent = this.defaults.accent;
+                isDark = true;
+            } else {
+                const bodyStyle = document.body ? getComputedStyle(document.body) : null;
+                const rootStyle = getComputedStyle(document.documentElement);
+                background = this.parseColor(
+                    bodyStyle?.backgroundColor,
+                    this.parseColor(rootStyle.backgroundColor, this.defaults.background)
+                );
+                text = this.parseColor(bodyStyle?.color, this.parseColor(rootStyle.color, this.defaults.text));
+                accent = this.getAccentColor();
+                isDark = this.getLuminance(background) < 0.35;
+            }
+
             const contrastTarget = isDark ? [255, 255, 255] : [0, 0, 0];
 
             const panelBase = this.mixColors(background, contrastTarget, isDark ? 0.08 : 0.03);
