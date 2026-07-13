@@ -2,6 +2,11 @@
 
 Enhance Torn racing with a cleaner leaderboard, realistic live telemetry, API-driven stats/history analysis, and race-result export tools.
 
+## What's New in v3.5.3
+
+- Click a racer in the telemetry list to select them on Torn's track map; their marker and map details update just like the native leaderboard. Use the arrow at the right to show or hide their details.
+- Thanks to The_GoodGuy [4012936] for the suggestion.
+
 ## What's New in v3.5.2
 
 - Detailed JSON export now includes complete race, driver, timing, racing-skill, and Telemetry-specific data.

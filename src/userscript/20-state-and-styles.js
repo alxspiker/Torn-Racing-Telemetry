@@ -9,6 +9,7 @@
         controlsContainer: null,
         historyStoragePurged: false,
         finalRaceData: [],
+        mapSelectionInitializedForRace: null,
 
         resetRaceState() {
             document.querySelectorAll('.driver-telemetry-display').forEach(el => {
@@ -27,6 +28,7 @@
             this.raceFinished = false;
             this.finalRaceData = [];
             this.currentRaceId = null;
+            this.mapSelectionInitializedForRace = null;
             UI.updateControlButtonsVisibility();
         },
         clearPopupsAndFullReset() {
@@ -46,5 +48,6 @@
             this.raceFinished = false;
             this.finalRaceData = [];
             this.currentRaceId = null;
+            this.mapSelectionInitializedForRace = null;
         }
     };

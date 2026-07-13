@@ -172,6 +172,18 @@
             nameDiv._displayName = name;
             nameDiv._displayIsSelf = isSelf;
         },
+        selectDriverOnMap(originalId) {
+            const originalRow = document.getElementById(originalId);
+            if (!originalRow) return;
+            if (!originalRow.classList.contains('selected')) originalRow.click();
+            this.syncMapSelection();
+        },
+        syncMapSelection() {
+            const selectedOriginalId = document.querySelector('#leaderBoard > li.selected')?.id;
+            State.customUIContainer?.querySelectorAll('.custom-driver-item[data-original-id]').forEach(item => {
+                item.classList.toggle('map-selected', item.dataset.originalId === selectedOriginalId);
+            });
+        },
         hideUnavailableMetricCards(detailsDiv) {
             detailsDiv?.querySelectorAll('.driver-metric-item:not(.metric-est-lap)').forEach(card => {
                 const value = card.querySelector('.driver-metric-value')?.textContent.trim();
@@ -193,6 +205,7 @@
                 carImg: element.querySelector('.driver-car-img'),
                 nameDiv: element.querySelector('.driver-name'),
                 telemetryDiv: element.querySelector('.driver-telemetry-display'),
+                detailsButton: element.querySelector('.driver-details-toggle'),
                 detailsDiv: element.querySelector('.driver-details')
             };
             return element._uiRefs;
@@ -219,14 +232,24 @@
             });
             const nameDiv = Utils.createElement('div', { className: 'driver-name' });
             const telemetryDiv = Utils.createElement('div', { className: 'driver-telemetry-display' });
+            const detailsButton = Utils.createElement('button', {
+                className: 'driver-details-toggle',
+                text: '+',
+                attrs: {
+                    type: 'button',
+                    title: 'Show driver details',
+                    'aria-label': 'Show driver details',
+                    'aria-expanded': 'false'
+                }
+            });
             const detailsDiv = Utils.createElement('div', { className: 'driver-details' });
 
             this.setDriverName(nameDiv, driverData.name, isSelf);
             Telemetry.ensureDisplayRefs(telemetryDiv);
 
-            infoRow.append(colorIndicator, carImg, nameDiv, telemetryDiv);
+            infoRow.append(colorIndicator, carImg, nameDiv, telemetryDiv, detailsButton);
             item.append(infoRow, detailsDiv);
-            item._uiRefs = { colorIndicator, carImg, nameDiv, telemetryDiv, detailsDiv };
+            item._uiRefs = { colorIndicator, carImg, nameDiv, telemetryDiv, detailsButton, detailsDiv };
 
             this.updateDriverElement(item, driverData, position);
             return item;
@@ -239,7 +262,15 @@
             const driverState = State.previousMetrics[driverId];
             const refs = this.ensureElementRefs(element);
 
-            element.className = `custom-driver-item status-${driverData.statusClass} ${isSelf ? 'is-self' : ''} ${detailsVisible ? 'details-visible' : ''}`.trim().replace(/\s+/g, ' ');
+            const mapSelected = document.getElementById(driverData.originalId)?.classList.contains('selected');
+            element.className = `custom-driver-item status-${driverData.statusClass} ${isSelf ? 'is-self' : ''} ${detailsVisible ? 'details-visible' : ''} ${mapSelected ? 'map-selected' : ''}`.trim().replace(/\s+/g, ' ');
+
+            if (refs.detailsButton) {
+                refs.detailsButton.textContent = detailsVisible ? '−' : '+';
+                refs.detailsButton.title = detailsVisible ? 'Hide driver details' : 'Show driver details';
+                refs.detailsButton.setAttribute('aria-label', refs.detailsButton.title);
+                refs.detailsButton.setAttribute('aria-expanded', String(detailsVisible));
+            }
 
             const colorIndicator = refs.colorIndicator;
             if (colorIndicator) {
@@ -635,6 +666,13 @@
                 previousElement = element;
             });
 
+            const mapSelectionRaceKey = State.currentRaceId || newDriversData.map(driver => driver.originalId).join(',');
+            if (State.mapSelectionInitializedForRace !== mapSelectionRaceKey) {
+                const selfDriver = newDriversData.find(driver => driver.userId === State.userId);
+                if (selfDriver) this.selectDriverOnMap(selfDriver.originalId);
+                State.mapSelectionInitializedForRace = mapSelectionRaceKey;
+            }
+
             const finishedOrCrashed = ['finished', 'crashed'];
             const allDriversFinished = newDriversData.length > 0 && newDriversData.every(d => finishedOrCrashed.includes(d.statusClass));
 
@@ -651,6 +689,8 @@
                 State.finalRaceData = [];
                 UI.updateControlButtonsVisibility();
             }
+
+            this.syncMapSelection();
 
             if (hadFocus && document.body.contains(State.customUIContainer)) {
                 State.customUIContainer.scrollTop = savedScrollTop;

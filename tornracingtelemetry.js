@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn Racing Telemetry
 // @namespace    https://www.torn.com/profiles.php?XID=2782979
-// @version      3.5.2
+// @version      3.5.3
 // @description  Enhanced Torn Racing UI: Telemetry, driver stats, advanced stats panel, history tracking, and race results export.
 // @match        https://www.torn.com/page.php?sid=racing*
 // @match        https://www.torn.com/loader.php?sid=racing*
@@ -21,12 +21,13 @@
     'use strict';
 
     const ScriptInfo = {
-        version: '3.5.2',
+        version: '3.5.3',
         author: "TheProgrammer",
         contactId: "2782979",
         contactUrl: function() { return `https://www.torn.com/profiles.php?XID=${this.contactId}`; },
         description: "Provides enhanced telemetry, stats analysis, historical tracking, and race results export for Torn Racing.",
         notes: [
+            "v3.5.3: Thanks to The_GoodGuy [4012936] for the suggestion. Click a racer to select them on the track; use the new arrow to view their details.",
             "v3.5.2: Detailed JSON exports now include finish times, best laps, racing skill, skill gain, and car details. Finished-driver cards now show Race Time, Best Lap, and Skill Gained. Crashes are labeled correctly.",
             "v3.5.1: Thanks to @CharmRiver[2334174] for reporting the issue. Fixed theme consistency by defaulting telemetry UI panels/cards to the dark palette so layout readability stays stable even when Torn is in light mode.",
             "v3.5.0: Major architecture and panel overhaul. Migrated to modular source + build pipeline, replaced chart-based history/stats views with API-first timeline/cards/tables, added true paginated /user/races sync, redesigned driver dropdown telemetry UI, improved animation behavior (including progress mode), updated panel styling/colors, and removed deprecated dead code paths.",
@@ -136,6 +137,7 @@
         controlsContainer: null,
         historyStoragePurged: false,
         finalRaceData: [],
+        mapSelectionInitializedForRace: null,
 
         resetRaceState() {
             document.querySelectorAll('.driver-telemetry-display').forEach(el => {
@@ -154,6 +156,7 @@
             this.raceFinished = false;
             this.finalRaceData = [];
             this.currentRaceId = null;
+            this.mapSelectionInitializedForRace = null;
             UI.updateControlButtonsVisibility();
         },
         clearPopupsAndFullReset() {
@@ -173,6 +176,7 @@
             this.raceFinished = false;
             this.finalRaceData = [];
             this.currentRaceId = null;
+            this.mapSelectionInitializedForRace = null;
         }
     };
 
@@ -2875,6 +2879,18 @@
             nameDiv._displayName = name;
             nameDiv._displayIsSelf = isSelf;
         },
+        selectDriverOnMap(originalId) {
+            const originalRow = document.getElementById(originalId);
+            if (!originalRow) return;
+            if (!originalRow.classList.contains('selected')) originalRow.click();
+            this.syncMapSelection();
+        },
+        syncMapSelection() {
+            const selectedOriginalId = document.querySelector('#leaderBoard > li.selected')?.id;
+            State.customUIContainer?.querySelectorAll('.custom-driver-item[data-original-id]').forEach(item => {
+                item.classList.toggle('map-selected', item.dataset.originalId === selectedOriginalId);
+            });
+        },
         hideUnavailableMetricCards(detailsDiv) {
             detailsDiv?.querySelectorAll('.driver-metric-item:not(.metric-est-lap)').forEach(card => {
                 const value = card.querySelector('.driver-metric-value')?.textContent.trim();
@@ -2896,6 +2912,7 @@
                 carImg: element.querySelector('.driver-car-img'),
                 nameDiv: element.querySelector('.driver-name'),
                 telemetryDiv: element.querySelector('.driver-telemetry-display'),
+                detailsButton: element.querySelector('.driver-details-toggle'),
                 detailsDiv: element.querySelector('.driver-details')
             };
             return element._uiRefs;
@@ -2922,14 +2939,24 @@
             });
             const nameDiv = Utils.createElement('div', { className: 'driver-name' });
             const telemetryDiv = Utils.createElement('div', { className: 'driver-telemetry-display' });
+            const detailsButton = Utils.createElement('button', {
+                className: 'driver-details-toggle',
+                text: '+',
+                attrs: {
+                    type: 'button',
+                    title: 'Show driver details',
+                    'aria-label': 'Show driver details',
+                    'aria-expanded': 'false'
+                }
+            });
             const detailsDiv = Utils.createElement('div', { className: 'driver-details' });
 
             this.setDriverName(nameDiv, driverData.name, isSelf);
             Telemetry.ensureDisplayRefs(telemetryDiv);
 
-            infoRow.append(colorIndicator, carImg, nameDiv, telemetryDiv);
+            infoRow.append(colorIndicator, carImg, nameDiv, telemetryDiv, detailsButton);
             item.append(infoRow, detailsDiv);
-            item._uiRefs = { colorIndicator, carImg, nameDiv, telemetryDiv, detailsDiv };
+            item._uiRefs = { colorIndicator, carImg, nameDiv, telemetryDiv, detailsButton, detailsDiv };
 
             this.updateDriverElement(item, driverData, position);
             return item;
@@ -2942,7 +2969,15 @@
             const driverState = State.previousMetrics[driverId];
             const refs = this.ensureElementRefs(element);
 
-            element.className = `custom-driver-item status-${driverData.statusClass} ${isSelf ? 'is-self' : ''} ${detailsVisible ? 'details-visible' : ''}`.trim().replace(/\s+/g, ' ');
+            const mapSelected = document.getElementById(driverData.originalId)?.classList.contains('selected');
+            element.className = `custom-driver-item status-${driverData.statusClass} ${isSelf ? 'is-self' : ''} ${detailsVisible ? 'details-visible' : ''} ${mapSelected ? 'map-selected' : ''}`.trim().replace(/\s+/g, ' ');
+
+            if (refs.detailsButton) {
+                refs.detailsButton.textContent = detailsVisible ? '−' : '+';
+                refs.detailsButton.title = detailsVisible ? 'Hide driver details' : 'Show driver details';
+                refs.detailsButton.setAttribute('aria-label', refs.detailsButton.title);
+                refs.detailsButton.setAttribute('aria-expanded', String(detailsVisible));
+            }
 
             const colorIndicator = refs.colorIndicator;
             if (colorIndicator) {
@@ -3338,6 +3373,13 @@
                 previousElement = element;
             });
 
+            const mapSelectionRaceKey = State.currentRaceId || newDriversData.map(driver => driver.originalId).join(',');
+            if (State.mapSelectionInitializedForRace !== mapSelectionRaceKey) {
+                const selfDriver = newDriversData.find(driver => driver.userId === State.userId);
+                if (selfDriver) this.selectDriverOnMap(selfDriver.originalId);
+                State.mapSelectionInitializedForRace = mapSelectionRaceKey;
+            }
+
             const finishedOrCrashed = ['finished', 'crashed'];
             const allDriversFinished = newDriversData.length > 0 && newDriversData.every(d => finishedOrCrashed.includes(d.statusClass));
 
@@ -3354,6 +3396,8 @@
                 State.finalRaceData = [];
                 UI.updateControlButtonsVisibility();
             }
+
+            this.syncMapSelection();
 
             if (hadFocus && document.body.contains(State.customUIContainer)) {
                 State.customUIContainer.scrollTop = savedScrollTop;
@@ -3646,8 +3690,8 @@
         .driver-info-row { display: flex; align-items: center; width: 100%; }
         .custom-driver-item:last-child { border-bottom: none; }
         .custom-driver-item:hover { background-color: var(--background-light); }
-        .custom-driver-item.is-self { background-color: var(--self-highlight-bg); border-left: 3px solid var(--self-highlight-border); padding-left: 5px; }
-        .custom-driver-item.is-self:hover { filter: brightness(1.05); }
+        .custom-driver-item.map-selected { background-color: var(--self-highlight-bg); border-left: 3px solid var(--self-highlight-border); padding-left: 5px; }
+        .custom-driver-item.map-selected:hover { filter: brightness(1.05); }
         .driver-color-indicator { width: 10px; height: 20px; margin-right: 8px; border-radius: 3px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: white; font-size: 9px; font-weight: bold; line-height: 1; overflow: hidden; text-shadow: 0 0 2px rgba(0,0,0,0.7); }
         .driver-car-img { width: 38px; height: 19px; margin-right: 8px; object-fit: contain; flex-shrink: 0; }
         .driver-name { flex-grow: 1; font-weight: bold; margin-right: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 100px; }
@@ -3657,6 +3701,8 @@
         .driver-telemetry-display .lap-estimate { font-size: 0.9em; opacity: 0.7; margin-left: 4px; }
         .driver-telemetry-display .lap-estimate:empty { display: none; }
         body.telemetry-hidden .driver-telemetry-display { opacity: 0; pointer-events: none; min-width: 0; padding: 0; }
+        .driver-details-toggle { width: 26px; height: 26px; margin-left: 6px; padding: 0; border: 1px solid var(--border-color); border-radius: 4px; background: rgba(0, 0, 0, 0.2); color: var(--text-color); cursor: pointer; font-size: 18px; line-height: 20px; flex-shrink: 0; }
+        .driver-details-toggle:hover, .driver-details-toggle:focus-visible { background: var(--background-light); border-color: var(--panel-link-color); outline: none; }
         .driver-details { width: 100%; background-color: var(--details-bg); margin-top: 6px; padding: 0 10px; box-sizing: border-box; max-height: 0; opacity: 0; overflow: hidden; border-radius: 4px; color: #bbb; font-size: 0.9em; transition: max-height 0.4s ease-out, opacity 0.3s ease-in, padding-top 0.4s ease-out, padding-bottom 0.4s ease-out, margin-top 0.4s ease-out; }
         .driver-details p { margin: 5px 0; line-height: 1.4; }
         .driver-details strong { color: #ddd; }
@@ -3833,7 +3879,7 @@
         @media (max-width: 400px) { .driver-metrics-grid, .driver-api-grid { grid-template-columns: 1fr; } }
     `;
 
-    function toggleDetails(event) { if (event.target.tagName === 'A') return; const driverItem = event.target.closest('.custom-driver-item'); if (driverItem && !State.isUpdating) { const driverId = driverItem.dataset.userId; const isOpening = !driverItem.classList.contains('details-visible'); driverItem.classList.toggle('details-visible'); const position = Array.from(driverItem.parentNode.children).indexOf(driverItem) + 1; const driverData = RaceManager.parseDriverData(document.getElementById(driverItem.dataset.originalId)); if (driverData) { RaceManager.updateDriverElement(driverItem, driverData, position); } if (isOpening && Config.get('fetchApiStatsOnClick') && driverId) { if (!driverItem.hasAttribute('data-stats-loaded') && !APIManager.isFetching.has(driverId)) { setTimeout(() => APIManager.fetchAndDisplayRacingStats(driverItem, driverId), 50); } } } }
+    function toggleDetails(event) { const driverItem = event.target.closest('.custom-driver-item'); if (!driverItem || State.isUpdating) return; const detailsToggle = event.target.closest('.driver-details-toggle'); if (!detailsToggle) { if (!event.target.closest('.driver-details') && event.target.tagName !== 'A') RaceManager.selectDriverOnMap(driverItem.dataset.originalId); return; } const driverId = driverItem.dataset.userId; const isOpening = !driverItem.classList.contains('details-visible'); driverItem.classList.toggle('details-visible'); const position = Array.from(driverItem.parentNode.children).indexOf(driverItem) + 1; const driverData = RaceManager.parseDriverData(document.getElementById(driverItem.dataset.originalId)); if (driverData) { RaceManager.updateDriverElement(driverItem, driverData, position); } if (isOpening && Config.get('fetchApiStatsOnClick') && driverId && !driverItem.hasAttribute('data-stats-loaded') && !APIManager.isFetching.has(driverId)) { setTimeout(() => APIManager.fetchAndDisplayRacingStats(driverItem, driverId), 50); } }
 
     function cleanupScriptState(reason = "Unknown") {
         if (State.observers.length > 0) { State.observers.forEach(obs => obs.disconnect()); State.observers = []; }
