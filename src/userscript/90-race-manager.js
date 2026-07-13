@@ -248,7 +248,6 @@
                 text: '+',
                 attrs: {
                     type: 'button',
-                    title: 'Show driver details',
                     'aria-label': 'Show driver details',
                     'aria-expanded': 'false'
                 }
@@ -278,8 +277,7 @@
 
             if (refs.detailsButton) {
                 refs.detailsButton.textContent = detailsVisible ? '−' : '+';
-                refs.detailsButton.title = detailsVisible ? 'Hide driver details' : 'Show driver details';
-                refs.detailsButton.setAttribute('aria-label', refs.detailsButton.title);
+                refs.detailsButton.setAttribute('aria-label', detailsVisible ? 'Hide driver details' : 'Show driver details');
                 refs.detailsButton.setAttribute('aria-expanded', String(detailsVisible));
             }
 
@@ -310,6 +308,7 @@
             if (telemetryDiv) {
                 const displayOptions = Config.get('telemetryDisplayOptions') || [];
                 const speedUnit = Config.get('speedUnit');
+                const speedUnitLabel = speedUnit === 'kmh' ? 'km/h' : speedUnit;
 
                 if (driverData.statusClass === 'crashed' || driverData.statusClass === 'finished' || driverData.statusClass === 'ready') {
                     if (telemetryDiv._animationRAF) {
@@ -330,7 +329,7 @@
                         telemetryText = `\u{1F3C1} ${finishTimeText}`;
                     } else {
                         const displayParts = [];
-                        if (displayOptions.includes('speed')) displayParts.push(`0 ${speedUnit}`);
+                        if (displayOptions.includes('speed')) displayParts.push(`0 ${speedUnitLabel}`);
                         if (displayOptions.includes('acceleration')) displayParts.push('0.0 g');
                         telemetryText = displayParts.length > 0 ? displayParts.join(' | ') : '-';
                     }
@@ -372,7 +371,7 @@
                             targetAcc,
                             animationDuration,
                             animationMode,
-                            speedUnit
+                            speedUnitLabel
                         );
                     } else {
                         if (telemetryDiv._animationRAF) {
@@ -386,7 +385,7 @@
                         const parts = [];
 
                         if (displayOptions.includes('speed')) {
-                            parts.push(`${Math.round(targetSpeed)} ${speedUnit}`);
+                            parts.push(`${Math.round(targetSpeed)} ${speedUnitLabel}`);
                         }
                         if (displayOptions.includes('acceleration')) {
                             parts.push(`${targetAcc.toFixed(1)} g`);
@@ -407,14 +406,15 @@
 
             if (refs.progressBars) {
                 const showProgressBars = (Config.get('telemetryDisplayOptions') || []).includes('progress');
+                const showLiveProgress = showProgressBars && !['finished', 'crashed'].includes(driverData.statusClass);
                 const fullProgress = Math.max(0, Math.min(100, driverData.progress || 0));
                 const laps = Math.max(1, Number(State.trackInfo.laps) || 1);
                 const progressPerLap = 100 / laps;
                 const lapProgress = fullProgress >= 100 ? 100 : ((fullProgress % progressPerLap) / progressPerLap) * 100;
-                refs.progressBars.hidden = !showProgressBars;
+                refs.progressBars.hidden = !showLiveProgress;
                 refs.fullProgressBar.style.width = `${fullProgress.toFixed(2)}%`;
                 refs.lapProgressBar.style.width = `${Math.max(0, Math.min(100, lapProgress)).toFixed(2)}%`;
-                refs.progressBars.title = `Race progress: ${fullProgress.toFixed(1)}% | Current lap: ${lapProgress.toFixed(1)}%`;
+                refs.progressBars.removeAttribute('title');
             }
 
             const detailsDiv = refs.detailsDiv;
@@ -616,86 +616,89 @@
             }
 
             State.isUpdating = true;
-            // Track metadata changes reset race state. Reacquire the ID here so finished
-            // race adapters still have it on first render and when viewing historic logs.
-            if (!State.currentRaceId) {
-                State.currentRaceId = this.getRaceId();
-            }
-            const savedScrollTop = State.customUIContainer.scrollTop;
-            const hadFocus = document.activeElement === State.customUIContainer || State.customUIContainer.contains(document.activeElement);
-            const originalListItems = Array.from(State.originalLeaderboard.querySelectorAll(':scope > li[id^="lbr-"]'));
-            const newDriversData = originalListItems.map(this.parseDriverData).filter(data => data !== null);
-            const currentElementsMap = new Map();
-
-            State.customUIContainer.querySelectorAll(':scope > .custom-driver-item[data-user-id]').forEach(el => {
-                currentElementsMap.set(el.dataset.userId, el);
-            });
-
-            const newElementsToProcess = new Map();
-            newDriversData.forEach((driverData, index) => {
-                const position = index + 1;
-                let element = currentElementsMap.get(driverData.userId);
-
-                if (element) {
-                    this.updateDriverElement(element, driverData, position);
-                    newElementsToProcess.set(driverData.userId, { data: driverData, element, position });
-                    currentElementsMap.delete(driverData.userId);
-                } else {
-                    element = this.createDriverElement(driverData, position);
-                    newElementsToProcess.set(driverData.userId, { data: driverData, element, position });
+            try {
+                // Track metadata changes reset race state. Reacquire the ID here so finished
+                // race adapters still have it on first render and when viewing historic logs.
+                if (!State.currentRaceId) {
+                    State.currentRaceId = this.getRaceId();
                 }
-            });
+                const savedScrollTop = State.customUIContainer.scrollTop;
+                const hadFocus = document.activeElement === State.customUIContainer || State.customUIContainer.contains(document.activeElement);
+                const originalListItems = Array.from(State.originalLeaderboard.querySelectorAll(':scope > li[id^="lbr-"]'));
+                const newDriversData = originalListItems.map(this.parseDriverData).filter(data => data !== null);
+                const currentElementsMap = new Map();
 
-            currentElementsMap.forEach((elementToRemove, removedUserId) => {
-                const telemetryDiv = this.ensureElementRefs(elementToRemove).telemetryDiv;
-                if (telemetryDiv?._animationRAF) {
-                    cancelAnimationFrame(telemetryDiv._animationRAF);
+                State.customUIContainer.querySelectorAll(':scope > .custom-driver-item[data-user-id]').forEach(el => {
+                    currentElementsMap.set(el.dataset.userId, el);
+                });
+
+                const newElementsToProcess = new Map();
+                newDriversData.forEach((driverData, index) => {
+                    const position = index + 1;
+                    let element = currentElementsMap.get(driverData.userId);
+
+                    if (element) {
+                        this.updateDriverElement(element, driverData, position);
+                        newElementsToProcess.set(driverData.userId, { data: driverData, element, position });
+                        currentElementsMap.delete(driverData.userId);
+                    } else {
+                        element = this.createDriverElement(driverData, position);
+                        newElementsToProcess.set(driverData.userId, { data: driverData, element, position });
+                    }
+                });
+
+                currentElementsMap.forEach((elementToRemove, removedUserId) => {
+                    const telemetryDiv = this.ensureElementRefs(elementToRemove).telemetryDiv;
+                    if (telemetryDiv?._animationRAF) {
+                        cancelAnimationFrame(telemetryDiv._animationRAF);
+                    }
+                    if (State.previousMetrics[removedUserId]) {
+                        delete State.previousMetrics[removedUserId];
+                    }
+                    elementToRemove.remove();
+                });
+
+                let previousElement = null;
+                newDriversData.forEach(driverData => {
+                    const { element } = newElementsToProcess.get(driverData.userId);
+                    const insertBeforeNode = previousElement ? previousElement.nextSibling : State.customUIContainer.firstChild;
+                    if (element !== insertBeforeNode) {
+                        State.customUIContainer.insertBefore(element, insertBeforeNode);
+                    }
+                    previousElement = element;
+                });
+
+                const mapSelectionRaceKey = State.currentRaceId || newDriversData.map(driver => driver.originalId).join(',');
+                if (State.mapSelectionInitializedForRace !== mapSelectionRaceKey) {
+                    const selfDriver = newDriversData.find(driver => driver.userId === State.userId);
+                    if (selfDriver) this.selectDriverOnMap(selfDriver.originalId);
+                    State.mapSelectionInitializedForRace = mapSelectionRaceKey;
                 }
-                if (State.previousMetrics[removedUserId]) {
-                    delete State.previousMetrics[removedUserId];
+
+                const finishedOrCrashed = ['finished', 'crashed'];
+                const allDriversFinished = newDriversData.length > 0 && newDriversData.every(d => finishedOrCrashed.includes(d.statusClass));
+
+                if (allDriversFinished && !State.raceFinished) {
+                    State.raceFinished = true;
+                    State.finalRaceData = newDriversData;
+                    UI.updateControlButtonsVisibility();
+                } else if (allDriversFinished) {
+                    // Torn can populate image titles after the result rows first render.
+                    // Keep the export snapshot aligned with the latest original markup.
+                    State.finalRaceData = newDriversData;
+                } else if (!allDriversFinished && State.raceFinished) {
+                    State.raceFinished = false;
+                    State.finalRaceData = [];
+                    UI.updateControlButtonsVisibility();
                 }
-                elementToRemove.remove();
-            });
 
-            let previousElement = null;
-            newDriversData.forEach(driverData => {
-                const { element } = newElementsToProcess.get(driverData.userId);
-                const insertBeforeNode = previousElement ? previousElement.nextSibling : State.customUIContainer.firstChild;
-                if (element !== insertBeforeNode) {
-                    State.customUIContainer.insertBefore(element, insertBeforeNode);
+                this.syncMapSelection();
+
+                if (hadFocus && document.body.contains(State.customUIContainer)) {
+                    State.customUIContainer.scrollTop = savedScrollTop;
                 }
-                previousElement = element;
-            });
-
-            const mapSelectionRaceKey = State.currentRaceId || newDriversData.map(driver => driver.originalId).join(',');
-            if (State.mapSelectionInitializedForRace !== mapSelectionRaceKey) {
-                const selfDriver = newDriversData.find(driver => driver.userId === State.userId);
-                if (selfDriver) this.selectDriverOnMap(selfDriver.originalId);
-                State.mapSelectionInitializedForRace = mapSelectionRaceKey;
+            } finally {
+                State.isUpdating = false;
             }
-
-            const finishedOrCrashed = ['finished', 'crashed'];
-            const allDriversFinished = newDriversData.length > 0 && newDriversData.every(d => finishedOrCrashed.includes(d.statusClass));
-
-            if (allDriversFinished && !State.raceFinished) {
-                State.raceFinished = true;
-                State.finalRaceData = newDriversData;
-                UI.updateControlButtonsVisibility();
-            } else if (allDriversFinished) {
-                // Torn can populate image titles after the result rows first render.
-                // Keep the export snapshot aligned with the latest original markup.
-                State.finalRaceData = newDriversData;
-            } else if (!allDriversFinished && State.raceFinished) {
-                State.raceFinished = false;
-                State.finalRaceData = [];
-                UI.updateControlButtonsVisibility();
-            }
-
-            this.syncMapSelection();
-
-            if (hadFocus && document.body.contains(State.customUIContainer)) {
-                State.customUIContainer.scrollTop = savedScrollTop;
-            }
-            State.isUpdating = false;
         }
     };

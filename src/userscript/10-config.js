@@ -1,6 +1,6 @@
     const Config = {
         defaults: {
-            telemetryDisplayOptions: ['speed'],
+            telemetryDisplayOptions: ['speed', 'acceleration', 'progress'],
             colorCode: true, animateChanges: true, speedUnit: 'mph',
             minUpdateInterval: 300, telemetryVisible: true, hideOriginalList: true, showLapEstimate: true,
             lapEstimateSmoothingFactor: 0.15, fetchApiStatsOnClick: true,

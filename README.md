@@ -1,31 +1,6 @@
 # Torn Racing Telemetry
 
-Enhance Torn racing with a cleaner leaderboard, realistic live telemetry, API-driven stats/history analysis, and race-result export tools.
-
-## What's New in v3.5.4
-
-- Refined the driver list with compact stacked Speed/Accel values, thin full-race and current-lap progress bars, and a compact finish-time display.
-- **Show Progress** now controls the progress bars rather than a text percentage.
-- Estimated lap time moved to expanded driver details and now uses an 8-second rolling speed average.
-- Speed and Accel share live green/red acceleration colors.
-
-## What's New in v3.5.3
-
-- Click a racer in the telemetry list to select them on Torn's track map; their marker and map details update just like the native leaderboard. Use the arrow at the right to show or hide their details.
-- Thanks to The_GoodGuy [4012936] for the suggestion.
-
-## What's New in v3.5.2
-
-- Detailed JSON export now includes complete race, driver, timing, racing-skill, and Telemetry-specific data.
-- Finished-driver details now show Race Time, Best Lap, and Skill Gained; crashed drivers are labeled clearly instead of showing `0 mph`.
-
-## What's New in v3.5.0
-
-- Migrated to a modular source layout with a single-file build output for userscript deployment.
-- Replaced chart-based history/stats views with fast API-first cards, timeline, and sortable tables.
-- Added true paginated official-race ingestion via `/user/races` links.
-- Redesigned expanded driver dropdown cards (desktop/mobile) and improved telemetry animation behavior.
-- Reduced dead code and cleaned stale legacy paths.
+Enhance Torn racing with a compact telemetry leaderboard, map-driver selection, API-powered analysis, and race-result exports.
 
 ## Table of Contents
 
@@ -42,7 +17,7 @@ Enhance Torn racing with a cleaner leaderboard, realistic live telemetry, API-dr
 
 ## Overview
 
-Torn Racing Telemetry replaces Torn's default race list with a telemetry-first interface and adds API-powered analysis panels. It is designed for practical race-day usage: fast reads, clear comparisons, and easy export.
+Torn Racing Telemetry replaces Torn's default race list with a telemetry-first interface and adds API-powered analysis panels. It is designed for practical race-day use: quick reads, clear comparisons, map interaction, and detailed exports.
 
 - Author: TheProgrammer ([2782979](https://www.torn.com/profiles.php?XID=2782979))
 - Distribution: final bundled userscript (`tornracingtelemetry.js`)
@@ -52,10 +27,12 @@ Torn Racing Telemetry replaces Torn's default race list with a telemetry-first i
 
 ### Enhanced UI and Telemetry
 
-- Optional replacement of Torn's leaderboard with always-sorted custom list.
-- Live speed, acceleration, and optional progress display.
+- Custom leaderboard that follows Torn's native race order. Click a driver row to select that driver on Torn's map; use `+` / `−` to open or close their details.
+- Live Speed and Accel values with shared green/red acceleration coloring.
+- Optional thin bars for full-race and current-lap progress; they automatically disappear for finished or crashed drivers.
+- New installs show Speed, Accel, and progress bars by default.
 - Color-coded telemetry by acceleration/deceleration.
-- Expandable per-driver detail cards with lap metrics and API racing stats.
+- Expandable per-driver detail cards with position, lap metrics, race time, best lap, estimated lap time, skill gain, and optional API racing stats.
 
 ### Data and Analysis
 
@@ -70,15 +47,17 @@ Torn Racing Telemetry replaces Torn's default race list with a telemetry-first i
 - Copy exported race data to clipboard.
 - Full settings panel for telemetry, animation, smoothing, API behavior, and UI toggles.
 - Torn PDA API-key placeholder auto-setup support.
-- Detailed JSON export with complete race-tracking and Telemetry-specific data.
+- Detailed JSON export with complete race, driver, timing, racing-skill, and Telemetry-specific data.
 
 ## Enhanced Driver List
 
-The collapsed list keeps race order and top-line telemetry easy to scan.
+The collapsed list keeps race order and the most useful live or completed-race information easy to scan.
 
 ![Enhanced Driver List (Collapsed)](imgs/leaderboard_closed.png)
 
-Expanding a driver shows status, lap/progress cards, calculated speed/accel, estimate data, and API racing stats.
+In a completed race, each row shows the finish time or a clear crash status. During a live race, the same rows show the selected Speed, Accel, and progress-bar telemetry instead.
+
+Expanding a driver shows status, race time/best lap when available, lap metrics, calculated Speed/Accel, estimated lap time, skill gain, and optional API racing stats. Cards without data stay hidden.
 
 ![Enhanced Driver Details (Expanded)](imgs/leaderboard_open.png)
 
@@ -134,17 +113,19 @@ Configure all major behavior from one place.
 
 ![Settings Panel](imgs/settings_panel.png)
 
+The screenshot shows an example configuration; new installs enable Speed, Accel, and progress bars by default.
+
 Main controls:
 
 - Enable/disable History and Stats panels.
-- Telemetry display options (speed, acceleration, progress).
+- Telemetry display options (Speed, Accel, progress bars).
 - Speed unit, color coding, animation toggle, smoothing values.
 - API key, API stats-on-click toggle, and race analysis limit.
 - Hide/show Torn's original leaderboard.
 
 ## API Usage and Privacy
 
-This script stores settings and API key locally in userscript storage and only sends API requests to Torn's official API.
+This script stores settings and the API key locally in userscript storage. API requests go only to Torn's official API, using the authorization header rather than including the key in request URLs.
 
 | Item | Behavior |
 |---|---|

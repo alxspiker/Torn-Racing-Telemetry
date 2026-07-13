@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn Racing Telemetry
 // @namespace    https://www.torn.com/profiles.php?XID=2782979
-// @version      3.5.4
+// @version      3.5.5
 // @description  Enhanced Torn Racing UI: Telemetry, driver stats, advanced stats panel, history tracking, and race results export.
 // @match        https://www.torn.com/page.php?sid=racing*
 // @match        https://www.torn.com/loader.php?sid=racing*
@@ -21,12 +21,13 @@
     'use strict';
 
     const ScriptInfo = {
-        version: '3.5.4',
+        version: '3.5.5',
         author: "TheProgrammer",
         contactId: "2782979",
         contactUrl: function() { return `https://www.torn.com/profiles.php?XID=${this.contactId}`; },
         description: "Provides enhanced telemetry, stats analysis, historical tracking, and race results export for Torn Racing.",
         notes: [
+            "v3.5.5: Removed tap/hover tooltips from the + / − driver-details control and progress bars. Fixed stale telemetry carrying into new races, improved reliability when Torn loads race data late, hid live progress bars for finished drivers, kept API keys out of request URLs, and enabled Speed, Accel, and progress bars by default for new installs.",
             "v3.5.4: Refined the driver list with compact stacked Speed/Accel values, thin full-race and current-lap progress bars, and a compact finish-time display. The Show Progress setting now controls the bars. Estimated lap time moved to expanded driver details and now uses an 8-second rolling speed average. Speed and Accel share live green/red acceleration colors.",
             "v3.5.3: Thanks to The_GoodGuy [4012936] for the suggestion. Click a racer to select them on the track; use the new arrow to view their details.",
             "v3.5.2: Detailed JSON exports now include finish times, best laps, racing skill, skill gain, and car details. Finished-driver cards now show Race Time, Best Lap, and Skill Gained. Crashes are labeled correctly.",

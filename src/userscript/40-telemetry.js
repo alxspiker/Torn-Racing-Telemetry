@@ -9,15 +9,12 @@
                 return container._displayRefs;
             }
 
-            const createStat = (className, label) => {
+            const createStat = className => {
                 const stat = document.createElement('span');
                 stat.className = `telemetry-stat ${className}`;
-                const labelSpan = document.createElement('span');
-                labelSpan.className = 'telemetry-label';
-                labelSpan.textContent = label;
                 const valueSpan = document.createElement('span');
                 valueSpan.className = 'telemetry-stat-value';
-                stat.append(labelSpan, valueSpan);
+                stat.append(valueSpan);
                 return { stat, value: valueSpan };
             };
 
@@ -27,8 +24,8 @@
             performanceColumn.className = 'telemetry-column telemetry-performance';
             const raceColumn = document.createElement('span');
             raceColumn.className = 'telemetry-column telemetry-race';
-            const speed = createStat('telemetry-speed', 'Speed');
-            const acceleration = createStat('telemetry-acceleration', 'Accel');
+            const speed = createStat('telemetry-speed');
+            const acceleration = createStat('telemetry-acceleration');
             const statusSpan = document.createElement('span');
             statusSpan.className = 'telemetry-status telemetry-stat';
 
@@ -55,7 +52,7 @@
             if (!refs) return;
 
             const parts = text.split('|').map(part => part.trim()).filter(Boolean);
-            const speed = parts.find(part => /\s(?:mph|km\/h)$/i.test(part));
+            const speed = parts.find(part => /\s(?:mph|km\/?h)$/i.test(part));
             const acceleration = parts.find(part => /\sg$/i.test(part));
             const status = parts.find(part => part !== speed && part !== acceleration && !/%$/.test(part));
             const hasTelemetryContent = Boolean(speed || acceleration || status);

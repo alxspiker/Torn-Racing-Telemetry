@@ -176,7 +176,9 @@
             const palette = this.getThemePalette();
             const root = document.documentElement;
             Object.entries(palette).forEach(([property, value]) => {
-                root.style.setProperty(property, value);
+                if (root.style.getPropertyValue(property) !== value) {
+                    root.style.setProperty(property, value);
+                }
             });
         }
     };
@@ -234,7 +236,6 @@
         .driver-telemetry-display .telemetry-stat { display: flex; align-items: baseline; justify-content: center; padding: 1px 6px; min-height: 14px; line-height: 1.15; }
         .driver-telemetry-display .telemetry-stat[hidden], .driver-telemetry-display .telemetry-column[hidden] { display: none !important; }
         .driver-telemetry-display .telemetry-stat + .telemetry-stat:not([hidden]) { border-top: 1px solid rgba(255,255,255,0.1); }
-        .driver-telemetry-display .telemetry-label { display: none; }
         .driver-telemetry-display .telemetry-stat-value { color: var(--telemetry-default-color); font-weight: 700; font-variant-numeric: tabular-nums; }
         .driver-telemetry-display .telemetry-status { justify-content: center; color: var(--telemetry-default-color); font-weight: 700; font-variant-numeric: tabular-nums; }
         .driver-progress-bars { display: flex; flex-direction: column; gap: 0; margin: 4px -8px -6px; }
@@ -244,8 +245,7 @@
         .driver-progress-fill { height: 100%; border-radius: inherit; transition: width 0.35s ease-out; }
         .driver-progress-full .driver-progress-fill { background: rgba(116, 192, 252, 0.72); }
         .driver-progress-lap .driver-progress-fill { background: rgba(129, 199, 132, 0.9); }
-        .driver-telemetry-display .lap-estimate:empty { display: none; }
-        body.telemetry-hidden .driver-telemetry-display { opacity: 0; pointer-events: none; min-width: 0; padding: 0; }
+        body.telemetry-hidden .driver-telemetry-display, body.telemetry-hidden .driver-progress-bars { display: none !important; }
         .driver-details-toggle { width: 26px; height: 26px; margin-left: 6px; padding: 0; border: 1px solid var(--border-color); border-radius: 4px; background: rgba(0, 0, 0, 0.2); color: var(--text-color); cursor: pointer; font-size: 18px; line-height: 20px; flex-shrink: 0; }
         .driver-details-toggle:hover, .driver-details-toggle:focus-visible { background: var(--background-light); border-color: var(--panel-link-color); outline: none; }
         .driver-details { width: 100%; background-color: var(--details-bg); margin-top: 0; padding: 0 10px; box-sizing: border-box; max-height: 0; opacity: 0; overflow: hidden; border-radius: 4px; color: #bbb; font-size: 0.9em; transition: max-height 0.4s ease-out, opacity 0.3s ease-in, padding-top 0.4s ease-out, padding-bottom 0.4s ease-out, margin-top 0.4s ease-out; }

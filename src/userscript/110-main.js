@@ -107,6 +107,7 @@
                          try {
                              const detectedRaceId = RaceManager.getRaceId();
                              if (detectedRaceId && detectedRaceId !== State.currentRaceId) {
+                                 State.resetRaceState();
                                  State.currentRaceId = detectedRaceId;
                              }
                             await RaceManager.updateTrackAndClassInfo();

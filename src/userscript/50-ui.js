@@ -51,7 +51,7 @@
             const telemetryGroup = Utils.createElement('div', { className: 'telemetry-options-group' });
             telemetryGroup.appendChild(createToggleControl('telemetryShowSpeed', 'Show Speed'));
             telemetryGroup.appendChild(createToggleControl('telemetryShowAcceleration', 'Show Acceleration'));
-            telemetryGroup.appendChild(createToggleControl('telemetryShowProgress', 'Show Progress %'));
+            telemetryGroup.appendChild(createToggleControl('telemetryShowProgress', 'Show Progress Bars'));
             settingsContent.appendChild(createSettingsItem({ labelText: 'Telemetry Display Options:', control: telemetryGroup }));
 
             const speedUnitSelect = Utils.createElement('select', { attrs: { id: 'speedUnit' } });

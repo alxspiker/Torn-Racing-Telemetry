@@ -109,9 +109,9 @@
             statsContainer.classList.add('loading');
             statsContainer.querySelector('.api-stat-error-msg').textContent = '';
             statsContainer.querySelectorAll('.api-stat').forEach(span => span.textContent = '...');
-            const apiUrl = `https://api.torn.com/v2/user?selections=personalstats&id=${userId}&cat=racing&key=${apiKey}`;
+            const apiUrl = `https://api.torn.com/v2/user?selections=personalstats&id=${encodeURIComponent(userId)}&cat=racing`;
             try {
-                const data = await this.fetchJson(apiUrl, { headers: { 'Accept': 'application/json' } });
+                const data = await this.fetchWithAuthHeader(apiUrl, apiKey);
                 const racingStats = data?.personalstats?.racing;
 
                 if (racingStats && typeof racingStats === 'object') {
@@ -213,12 +213,25 @@
         skillGainRequests: new Map(),
         raceResultCache: new Map(),
         raceResultRequests: new Map(),
+        installRetryTimer: null,
+        installAttempts: 0,
 
         install() {
             if (this.installed) return;
-            this.installed = true;
             const $ = window.jQuery || window.$;
-            if (!$?.fn?.jquery) return;
+            if (!$?.fn?.jquery) {
+                if (!this.installRetryTimer && this.installAttempts < 40) {
+                    this.installAttempts += 1;
+                    this.installRetryTimer = setTimeout(() => {
+                        this.installRetryTimer = null;
+                        this.install();
+                    }, 250);
+                }
+                return;
+            }
+
+            this.installed = true;
+            this.installAttempts = 0;
 
             $(document).on('ajaxComplete.rttRaceData', (_event, xhr) => {
                 try {
@@ -428,8 +441,8 @@
 
         async fetchSkill(userId) {
             const apiKey = Config.get('apiKey');
-            const url = `https://api.torn.com/v2/user?selections=personalstats&id=${encodeURIComponent(userId)}&cat=racing&key=${encodeURIComponent(apiKey)}`;
-            const data = await APIManager.fetchJson(url, { headers: { Accept: 'application/json' } });
+            const url = `https://api.torn.com/v2/user?selections=personalstats&id=${encodeURIComponent(userId)}&cat=racing`;
+            const data = await APIManager.fetchWithAuthHeader(url, apiKey);
             const value = data?.personalstats?.racing?.skill ?? data?.personalstats?.racingskill;
             const skill = Number(value);
             return Number.isFinite(skill) ? skill : null;
