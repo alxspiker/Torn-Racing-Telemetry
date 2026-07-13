@@ -2,6 +2,13 @@
 
 Enhance Torn racing with a cleaner leaderboard, realistic live telemetry, API-driven stats/history analysis, and race-result export tools.
 
+## What's New in v3.5.4
+
+- Refined the driver list with compact stacked Speed/Accel values, thin full-race and current-lap progress bars, and a compact finish-time display.
+- **Show Progress** now controls the progress bars rather than a text percentage.
+- Estimated lap time moved to expanded driver details and now uses an 8-second rolling speed average.
+- Speed and Accel share live green/red acceleration colors.
+
 ## What's New in v3.5.3
 
 - Click a racer in the telemetry list to select them on Torn's track map; their marker and map details update just like the native leaderboard. Use the arrow at the right to show or hide their details.

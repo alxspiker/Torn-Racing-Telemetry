@@ -205,6 +205,9 @@
                 carImg: element.querySelector('.driver-car-img'),
                 nameDiv: element.querySelector('.driver-name'),
                 telemetryDiv: element.querySelector('.driver-telemetry-display'),
+                progressBars: element.querySelector('.driver-progress-bars'),
+                fullProgressBar: element.querySelector('.driver-progress-full .driver-progress-fill'),
+                lapProgressBar: element.querySelector('.driver-progress-lap .driver-progress-fill'),
                 detailsButton: element.querySelector('.driver-details-toggle'),
                 detailsDiv: element.querySelector('.driver-details')
             };
@@ -232,6 +235,14 @@
             });
             const nameDiv = Utils.createElement('div', { className: 'driver-name' });
             const telemetryDiv = Utils.createElement('div', { className: 'driver-telemetry-display' });
+            const progressBars = Utils.createElement('div', { className: 'driver-progress-bars' });
+            const fullProgressTrack = Utils.createElement('div', { className: 'driver-progress-track driver-progress-full' });
+            const fullProgressBar = Utils.createElement('div', { className: 'driver-progress-fill' });
+            const lapProgressTrack = Utils.createElement('div', { className: 'driver-progress-track driver-progress-lap' });
+            const lapProgressBar = Utils.createElement('div', { className: 'driver-progress-fill' });
+            fullProgressTrack.append(fullProgressBar);
+            lapProgressTrack.append(lapProgressBar);
+            progressBars.append(fullProgressTrack, lapProgressTrack);
             const detailsButton = Utils.createElement('button', {
                 className: 'driver-details-toggle',
                 text: '+',
@@ -248,8 +259,8 @@
             Telemetry.ensureDisplayRefs(telemetryDiv);
 
             infoRow.append(colorIndicator, carImg, nameDiv, telemetryDiv, detailsButton);
-            item.append(infoRow, detailsDiv);
-            item._uiRefs = { colorIndicator, carImg, nameDiv, telemetryDiv, detailsButton, detailsDiv };
+            item.append(infoRow, progressBars, detailsDiv);
+            item._uiRefs = { colorIndicator, carImg, nameDiv, telemetryDiv, progressBars, fullProgressBar, lapProgressBar, detailsButton, detailsDiv };
 
             this.updateDriverElement(item, driverData, position);
             return item;
@@ -299,7 +310,6 @@
             if (telemetryDiv) {
                 const displayOptions = Config.get('telemetryDisplayOptions') || [];
                 const speedUnit = Config.get('speedUnit');
-                let lapEstimateText = '';
 
                 if (driverData.statusClass === 'crashed' || driverData.statusClass === 'finished' || driverData.statusClass === 'ready') {
                     if (telemetryDiv._animationRAF) {
@@ -316,21 +326,12 @@
                         telemetryText = 'Crashed';
                         telemetryColor = 'var(--telemetry-decel-color)';
                     } else if (driverData.statusClass === 'finished') {
-                        const finishTime = Utils.parseTime(driverData.originalStatusText);
-                        let avgSpeedFormatted = '---';
                         const finishTimeText = driverData.originalStatusText || '--:--';
-
-                        if (finishTime > 0 && State.trackInfo.total > 0) {
-                            const avgSpeed = (State.trackInfo.total / finishTime) * 3600;
-                            avgSpeedFormatted = `~${Math.round(Utils.convertSpeed(avgSpeed, speedUnit))} ${speedUnit}`;
-                        }
-
-                        telemetryText = `\u{1F3C1} ${finishTimeText} (${avgSpeedFormatted})`;
+                        telemetryText = `\u{1F3C1} ${finishTimeText}`;
                     } else {
                         const displayParts = [];
                         if (displayOptions.includes('speed')) displayParts.push(`0 ${speedUnit}`);
                         if (displayOptions.includes('acceleration')) displayParts.push('0.0 g');
-                        if (displayOptions.includes('progress')) displayParts.push(`${driverData.progress.toFixed(1)}%`);
                         telemetryText = displayParts.length > 0 ? displayParts.join(' | ') : '-';
                     }
 
@@ -341,10 +342,7 @@
                     const targetAcc = metrics.acceleration;
 
                     if (Config.get('showLapEstimate') && driverData.progress < 100 && State.trackInfo.id && driverState) {
-                        const lapEstimateSeconds = Telemetry.calculateSmoothedLapEstimate(driverId, metrics);
-                        if (lapEstimateSeconds !== null && isFinite(lapEstimateSeconds) && lapEstimateSeconds > 0) {
-                            lapEstimateText = `~${Utils.formatTime(lapEstimateSeconds)}`;
-                        }
+                        Telemetry.calculateSmoothedLapEstimate(driverId, metrics);
                     }
 
                     const canAnimate =
@@ -374,9 +372,7 @@
                             targetAcc,
                             animationDuration,
                             animationMode,
-                            speedUnit,
-                            lapEstimateText,
-                            displayOptions.includes('progress') ? `${driverData.progress.toFixed(1)}%` : ''
+                            speedUnit
                         );
                     } else {
                         if (telemetryDiv._animationRAF) {
@@ -398,15 +394,8 @@
                                 staticColor = Telemetry.getTelemetryColor(targetAcc);
                             }
                         }
-                        if (displayOptions.includes('progress')) {
-                            parts.push(`${driverData.progress.toFixed(1)}%`);
-                            if (!displayOptions.includes('acceleration') || !Config.get('colorCode')) {
-                                staticColor = 'var(--telemetry-default-color)';
-                            }
-                        }
-
                         const staticText = parts.join(' | ') || '-';
-                        Telemetry.setTelemetryDisplay(telemetryDiv, staticText, staticColor, lapEstimateText);
+                        Telemetry.setTelemetryDisplay(telemetryDiv, staticText, staticColor);
                     }
 
                     if (driverState) {
@@ -414,6 +403,18 @@
                         driverState.lastDisplayedAcceleration = metrics.acceleration;
                     }
                 }
+            }
+
+            if (refs.progressBars) {
+                const showProgressBars = (Config.get('telemetryDisplayOptions') || []).includes('progress');
+                const fullProgress = Math.max(0, Math.min(100, driverData.progress || 0));
+                const laps = Math.max(1, Number(State.trackInfo.laps) || 1);
+                const progressPerLap = 100 / laps;
+                const lapProgress = fullProgress >= 100 ? 100 : ((fullProgress % progressPerLap) / progressPerLap) * 100;
+                refs.progressBars.hidden = !showProgressBars;
+                refs.fullProgressBar.style.width = `${fullProgress.toFixed(2)}%`;
+                refs.lapProgressBar.style.width = `${Math.max(0, Math.min(100, lapProgress)).toFixed(2)}%`;
+                refs.progressBars.title = `Race progress: ${fullProgress.toFixed(1)}% | Current lap: ${lapProgress.toFixed(1)}%`;
             }
 
             const detailsDiv = refs.detailsDiv;

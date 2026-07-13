@@ -78,8 +78,9 @@
             }));
             settingsContent.appendChild(createSettingsItem({ control: createToggleControl('showLapEstimate', 'Show Est. Lap Time') }));
             settingsContent.appendChild(createSettingsItem({
-                labelText: 'Lap Est. Smoothing (0.01-1.0)',
-                control: Utils.createElement('input', { attrs: { type: 'number', id: 'lapEstimateSmoothingFactor', min: '0.01', max: '1.0', step: '0.01' } })
+                labelText: 'Lap Est. Display Smoothing (0.01-1.0)',
+                control: Utils.createElement('input', { attrs: { type: 'number', id: 'lapEstimateSmoothingFactor', min: '0.01', max: '1.0', step: '0.01' } }),
+                helpText: 'The estimate uses an 8-second rolling speed average. This setting adds final display smoothing (higher = more responsive).'
             }));
             settingsContent.appendChild(createDivider());
 
