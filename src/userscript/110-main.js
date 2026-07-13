@@ -70,6 +70,7 @@
             State.originalLeaderboard = document.getElementById('leaderBoard');
             const originalScrollbarContainer = document.getElementById('drivers-scrollbar');
             if (!State.originalLeaderboard || !originalScrollbarContainer) { throw new Error("Leaderboard elements not found."); }
+            APIManager.raceData.install();
             const parentContainer = originalScrollbarContainer.parentNode;
 
             if (!State.controlsContainer) {

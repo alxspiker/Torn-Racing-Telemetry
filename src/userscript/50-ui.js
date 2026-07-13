@@ -1358,7 +1358,7 @@
                                 <option value="md">Markdown Table</option>
                                 <option value="csv">CSV (Comma Separated)</option>
                                 <option value="txt">Plain Text</option>
-                                <option value="json">JSON Data</option>
+                                <option value="json">JSON Data (Detailed)</option>
                             </select>
                         </div>
                         <div class="action-group">
@@ -1380,7 +1380,7 @@
             const downloadBtn = content.querySelector('#downloadFileBtn');
             const copyBtn = content.querySelector('#copyClipboardBtn');
 
-            const performAction = actionType => {
+            const performAction = async actionType => {
                 const format = formatSelect.value;
                 let dataString;
                 let fileExt;
@@ -1410,7 +1410,7 @@
                             break;
                         case 'json':
                         default:
-                            dataString = DataExporter.formatAsJSON();
+                            dataString = await DataExporter.formatAsJSON();
                             fileExt = 'json';
                             mimeType = 'application/json';
                             break;

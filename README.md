@@ -2,6 +2,11 @@
 
 Enhance Torn racing with a cleaner leaderboard, realistic live telemetry, API-driven stats/history analysis, and race-result export tools.
 
+## What's New in v3.5.2
+
+- Detailed JSON export now includes complete race, driver, timing, racing-skill, and Telemetry-specific data.
+- Finished-driver details now show Race Time, Best Lap, and Skill Gained; crashed drivers are labeled clearly instead of showing `0 mph`.
+
 ## What's New in v3.5.0
 
 - Migrated to a modular source layout with a single-file build output for userscript deployment.
@@ -53,6 +58,7 @@ Torn Racing Telemetry replaces Torn's default race list with a telemetry-first i
 - Copy exported race data to clipboard.
 - Full settings panel for telemetry, animation, smoothing, API behavior, and UI toggles.
 - Torn PDA API-key placeholder auto-setup support.
+- Detailed JSON export with complete race-tracking and Telemetry-specific data.
 
 ## Enhanced Driver List
 
@@ -143,6 +149,7 @@ This script stores settings and API key locally in userscript storage and only s
 3. Open Torn racing page and configure settings.
 4. Add API key for full Stats/History/driver API features.
 5. Torn PDA users can use the managed placeholder flow (`###PDA-APIKEY###`).
+6. Use **Export** → **JSON Data (Detailed)** after a completed race for a file containing race-tracking data plus additional Telemetry details. An API key adds racing-skill data; without one, the file remains valid but leaves that field blank.
 
 ## FAQ
 

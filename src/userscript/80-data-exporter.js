@@ -107,9 +107,77 @@
             txt += `Exported by Torn Racing Telemetry Script v${ScriptInfo.version}\n`;
             return txt;
         },
-        formatAsJSON() {
-             const data = this.getFinalData();
-             return JSON.stringify(data, null, 2);
+        getDetailedRaceFields() {
+            const values = {};
+            document.querySelectorAll('.car-selected.left .properties-wrap li, .car-selected.left div.cont-black.bottom-round > ul > li').forEach(item => {
+                const title = item.querySelector('.properties > .title')?.textContent.trim();
+                const separator = title?.indexOf(':');
+                if (separator > 0) values[title.slice(0, separator).trim()] = title.slice(separator + 1).trim();
+            });
+
+            return {
+                raceID: Number.parseInt(values.ID || State.currentRaceId, 10) || State.currentRaceId || null,
+                raceName: values.Name || '', eventType: values.Type || '',
+                timeCreated: values['Time created'] || '', timeStarted: values['Time started'] || '', timeEnded: values['Time ended'] || '',
+                trackName: values.Track || State.trackInfo.name || '', lapsAmount: values.Laps || String(State.trackInfo.laps || ''),
+                participantsAmount: values.Participants || String(State.finalRaceData.length), driversRequired: values['Drivers required'] || '',
+                maximumDrivers: values['Maximum Drivers'] || '', carsAllowed: values['Cars allowed'] || '',
+                upgradesAllowed: values['Upgrades allowed'] || '', betAmount: values['Bet amount'] || ''
+            };
+        },
+        async formatAsJSON() {
+            const liveDrivers = [...document.querySelectorAll('#leaderBoard > li[id^="lbr-"]')]
+                .map(row => RaceManager.parseDriverData(row))
+                .filter(Boolean);
+            const drivers = liveDrivers.length ? liveDrivers : State.finalRaceData;
+            if (!State.raceFinished || !drivers.length) throw new Error('JSON export is available after a race has finished.');
+
+            Utils.showNotification('Preparing detailed JSON export…');
+            const { results, skills } = await APIManager.raceData.getCompletedRaceData(drivers);
+            const raceFields = this.getDetailedRaceFields();
+            const skillGain = await APIManager.raceData.loadSkillGain(State.currentRaceId);
+            const exportedAt = new Date().toISOString();
+
+            // Core race-tracking fields stay at top level; telemetry adds
+            // richer native details without complicating simple imports.
+            const records = drivers.map((driver, index) => {
+                const result = results.get(String(driver.userId));
+                const crashed = Boolean(result?.crashed || driver.statusClass === 'crashed');
+                const finishTime = crashed ? 'crashed' : (result?.displayTime || driver.originalStatusText || '');
+                const inferredBestLap = !crashed && Number(raceFields.lapsAmount) === 1 ? Utils.parseTime(finishTime) : null;
+                const bestLapSeconds = Number.isFinite(result?.bestLap) ? result.bestLap : inferredBestLap;
+                const bestLap = crashed ? 'crashed' : (Number.isFinite(result?.bestLap)
+                    ? Utils.formatTime(result.bestLap, true)
+                    : (Number.isFinite(inferredBestLap) ? finishTime : 'N/A'));
+                const racingSkill = skills.get(driver.userId);
+                const driverSkillGain = String(driver.userId) === String(State.userId) && Number.isFinite(skillGain) ? skillGain : null;
+
+                return {
+                    userName: driver.name, position: result?.position || index + 1, finishTime, lapTime: bestLap,
+                    racingSkill: Number.isFinite(racingSkill) ? String(racingSkill) : '', userID: String(driver.userId), carUsed: driver.carTitle,
+                    ...raceFields,
+                    telemetry: {
+                        schemaVersion: ScriptInfo.version, exportedAt, status: driver.statusClass,
+                        progressPercent: driver.statusClass === 'finished' ? 100 : driver.progress,
+                        trackId: State.trackInfo.id ?? null, trackLength: State.trackInfo.length ?? null,
+                        bestLapSeconds: Number.isFinite(bestLapSeconds) ? bestLapSeconds : null,
+                        racingSkill: Number.isFinite(racingSkill) ? racingSkill : null,
+                        skillGain: driverSkillGain,
+                        // Preserve the information previously available in the
+                        // native nested JSON export as well.
+                        trackInfo: { ...State.trackInfo },
+                        nativeResult: {
+                            position: result?.position || index + 1,
+                            name: driver.name,
+                            userId: driver.userId,
+                            car: driver.carTitle,
+                            status: driver.statusClass,
+                            finalTimeOrStatus: driver.originalStatusText
+                        }
+                    }
+                };
+            });
+            return JSON.stringify(records, null, 2);
         },
         downloadData(dataString, fileExt, mimeType) {
             const blob = new Blob([dataString], { type: mimeType + ';charset=utf-8' });

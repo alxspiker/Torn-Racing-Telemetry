@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn Racing Telemetry
 // @namespace    https://www.torn.com/profiles.php?XID=2782979
-// @version      3.5.1
+// @version      3.5.2
 // @description  Enhanced Torn Racing UI: Telemetry, driver stats, advanced stats panel, history tracking, and race results export.
 // @match        https://www.torn.com/page.php?sid=racing*
 // @match        https://www.torn.com/loader.php?sid=racing*
@@ -21,12 +21,13 @@
     'use strict';
 
     const ScriptInfo = {
-        version: '3.5.1',
+        version: '3.5.2',
         author: "TheProgrammer",
         contactId: "2782979",
         contactUrl: function() { return `https://www.torn.com/profiles.php?XID=${this.contactId}`; },
         description: "Provides enhanced telemetry, stats analysis, historical tracking, and race results export for Torn Racing.",
         notes: [
+            "v3.5.2: Detailed JSON exports now include finish times, best laps, racing skill, skill gain, and car details. Finished-driver cards now show Race Time, Best Lap, and Skill Gained. Crashes are labeled correctly.",
             "v3.5.1: Thanks to @CharmRiver[2334174] for reporting the issue. Fixed theme consistency by defaulting telemetry UI panels/cards to the dark palette so layout readability stays stable even when Torn is in light mode.",
             "v3.5.0: Major architecture and panel overhaul. Migrated to modular source + build pipeline, replaced chart-based history/stats views with API-first timeline/cards/tables, added true paginated /user/races sync, redesigned driver dropdown telemetry UI, improved animation behavior (including progress mode), updated panel styling/colors, and removed deprecated dead code paths.",
             "v3.4.2: Thanks to @MikeyJDoug[2137820] for noticing. Fixed a critical error in the stats panel for new users or users with no official race history. The panel will now display a proper message instead of crashing.",
@@ -1840,7 +1841,7 @@
                                 <option value="md">Markdown Table</option>
                                 <option value="csv">CSV (Comma Separated)</option>
                                 <option value="txt">Plain Text</option>
-                                <option value="json">JSON Data</option>
+                                <option value="json">JSON Data (Detailed)</option>
                             </select>
                         </div>
                         <div class="action-group">
@@ -1862,7 +1863,7 @@
             const downloadBtn = content.querySelector('#downloadFileBtn');
             const copyBtn = content.querySelector('#copyClipboardBtn');
 
-            const performAction = actionType => {
+            const performAction = async actionType => {
                 const format = formatSelect.value;
                 let dataString;
                 let fileExt;
@@ -1892,7 +1893,7 @@
                             break;
                         case 'json':
                         default:
-                            dataString = DataExporter.formatAsJSON();
+                            dataString = await DataExporter.formatAsJSON();
                             fileExt = 'json';
                             mimeType = 'application/json';
                             break;
@@ -2069,11 +2070,18 @@
             const detailsDiv = driverItem.querySelector('.driver-details');
             const statsContainer = detailsDiv?.querySelector('.api-stats-container');
             if (!statsContainer || !userId || this.isFetching.has(userId)) return;
+            const hideUnavailableApiCards = () => {
+                statsContainer.querySelectorAll('.driver-api-item').forEach(card => {
+                    const value = card.querySelector('.driver-api-value')?.textContent.trim() || '';
+                    card.style.display = value.includes('N/A') || value === '-' ? 'none' : '';
+                });
+            };
 
             if (!Utils.isApiKeyAvailable()) {
                 statsContainer.classList.add('no-key');
                 statsContainer.querySelector('.api-stat-error-msg').textContent = 'API key not configured in settings.';
                 statsContainer.querySelectorAll('.api-stat').forEach(span => span.textContent = 'N/A');
+                hideUnavailableApiCards();
                 driverItem.dataset.statsLoaded = 'true';
                 return;
             }
@@ -2090,7 +2098,8 @@
                 const racingStats = data?.personalstats?.racing;
 
                 if (racingStats && typeof racingStats === 'object') {
-                    statsContainer.querySelector('.stat-skill').textContent = racingStats.skill?.toLocaleString() ?? 'N/A';
+                    const skill = racingStats.skill?.toLocaleString() ?? 'N/A';
+                    statsContainer.querySelector('.stat-skill').textContent = skill;
                     statsContainer.querySelector('.stat-points').textContent = racingStats.points?.toLocaleString() ?? 'N/A';
                     const racesEntered = racingStats.races?.entered;
                     const racesWon = racingStats.races?.won;
@@ -2099,17 +2108,20 @@
                     const winRate = (racesEntered && racesWon > 0) ? ((racesWon / racesEntered) * 100).toFixed(1) + '%' : (racesEntered > 0 ? '0.0%' : 'N/A');
                     statsContainer.querySelector('.stat-win-rate').textContent = winRate;
                     statsContainer.classList.add('loaded');
+                    hideUnavailableApiCards();
                     driverItem.dataset.statsLoaded = 'true';
                 } else {
                     statsContainer.classList.add('error');
                     statsContainer.querySelector('.api-stat-error-msg').textContent = 'No racing stats found (or permission denied).';
                     statsContainer.querySelectorAll('.api-stat').forEach(span => span.textContent = 'N/A');
+                    hideUnavailableApiCards();
                     driverItem.dataset.statsLoaded = 'true';
                 }
             } catch (error) {
                 statsContainer.classList.add('error');
                 statsContainer.querySelector('.api-stat-error-msg').textContent = `Error: ${error.message}`;
                 statsContainer.querySelectorAll('.api-stat').forEach(span => span.textContent = '-');
+                hideUnavailableApiCards();
                 delete driverItem.dataset.statsLoaded;
                 Utils.showNotification(error.message, 'error');
             } finally {
@@ -2172,6 +2184,240 @@
             return Array.isArray(data?.racingrecords) ? data.racingrecords : [];
         },
         async fetchTrackRecords(apiKey, trackId, raceClass) { if (!trackId) throw new Error("Track ID required."); if (!raceClass) throw new Error("Race Class required."); const url = `https://api.torn.com/v2/racing/${trackId}/records?cat=${raceClass}`; const data = await this.fetchWithAuthHeader(url, apiKey); return data.records || []; }
+    };
+
+    APIManager.raceData = {
+        cacheStorageKey: 'racingCustomUITelemetryLugburzSkillCache_v1',
+        cacheMaxAgeMs: 24 * 60 * 60 * 1000,
+        installed: false,
+        latestRacePayload: null,
+        skillCache: null,
+        skillGainCache: new Map(),
+        skillGainRequests: new Map(),
+        raceResultCache: new Map(),
+        raceResultRequests: new Map(),
+
+        install() {
+            if (this.installed) return;
+            this.installed = true;
+            const $ = window.jQuery || window.$;
+            if (!$?.fn?.jquery) return;
+
+            $(document).on('ajaxComplete.rttRaceData', (_event, xhr) => {
+                try {
+                    const payload = JSON.parse(xhr.responseText);
+                    if (payload?.raceData?.cars && payload?.raceData?.carInfo && payload?.raceData?.trackData?.intervals) {
+                        this.latestRacePayload = payload;
+                    }
+                } catch (e) { }
+            });
+        },
+
+        getSkillGainDisplay(raceId) {
+            const gain = this.skillGainCache.get(String(raceId));
+            if (!Number.isFinite(gain)) return 'N/A';
+            return `${gain > 0 ? '+' : ''}${gain.toFixed(4)}`;
+        },
+
+        async loadSkillGain(raceId) {
+            const key = String(raceId || '');
+            if (!key || !Utils.isApiKeyAvailable() || !State.userId) return null;
+            if (this.skillGainCache.has(key)) return this.skillGainCache.get(key);
+            if (this.skillGainRequests.has(key)) return this.skillGainRequests.get(key);
+
+            const request = (async () => {
+                try {
+                    const races = await APIManager.fetchHistoricalRaceData(Config.get('apiKey'), State.userId, 10);
+                    const race = races.find(entry => String(entry.id) === key);
+                    const gain = Number(race?.skill_gain);
+                    if (Number.isFinite(gain)) {
+                        this.skillGainCache.set(key, gain);
+                        return gain;
+                    }
+                    return null;
+                } finally {
+                    this.skillGainRequests.delete(key);
+                }
+            })();
+            this.skillGainRequests.set(key, request);
+            return request;
+        },
+
+        loadCache() {
+            if (this.skillCache) return this.skillCache;
+            try {
+                const saved = GM_getValue(this.cacheStorageKey, '{}');
+                this.skillCache = typeof saved === 'string' ? JSON.parse(saved) : saved;
+            } catch (e) {
+                this.skillCache = {};
+            }
+            return this.skillCache;
+        },
+
+        getCachedSkill(userId) {
+            const entry = this.loadCache()?.[userId];
+            return entry && Date.now() - entry.timestamp < this.cacheMaxAgeMs && Number.isFinite(entry.value) ? entry.value : null;
+        },
+
+        saveSkill(userId, value) {
+            const cache = this.loadCache();
+            cache[userId] = { value, timestamp: Date.now() };
+            GM_setValue(this.cacheStorageKey, JSON.stringify(cache));
+        },
+
+        async getCompletedRaceData(drivers) {
+            if (!drivers?.length) throw new Error('No completed race data is available.');
+            const raceId = State.currentRaceId;
+            if (!raceId) throw new Error('The race ID is unavailable.');
+
+            let results = this.buildResultsFromLeaderboard(drivers);
+            let apiResultsLoaded = false;
+            if (Utils.isApiKeyAvailable()) {
+                try {
+                    const apiResults = await this.loadApiRaceResults(raceId);
+                    if (apiResults.size) {
+                        this.mergeApiRaceResults(results, apiResults);
+                        apiResultsLoaded = true;
+                    }
+                } catch (error) {
+                    console.warn('Telemetry Script: Could not load detailed race results:', error);
+                }
+            }
+            if (!apiResultsLoaded) {
+                try {
+                    const payloadResults = this.buildResults(await this.waitForRacePayload(raceId, 4));
+                    if (payloadResults.size) results = payloadResults;
+                } catch (payloadError) { }
+            }
+            if (!results.size) throw new Error('Completed-race data was not available.');
+
+            const driverIds = drivers.map(driver => driver.userId).filter(Boolean);
+            const skills = Utils.isApiKeyAvailable() ? await this.loadSkills(driverIds) : new Map();
+            return { results, skills };
+        },
+
+        async loadApiRaceResults(raceId) {
+            const key = String(raceId || '');
+            if (!key || !Utils.isApiKeyAvailable()) return new Map();
+            if (this.raceResultCache.has(key)) return this.raceResultCache.get(key);
+            if (this.raceResultRequests.has(key)) return this.raceResultRequests.get(key);
+
+            const request = (async () => {
+                try {
+                    const data = await APIManager.fetchWithAuthHeader(`https://api.torn.com/v2/racing/${encodeURIComponent(key)}/race`, Config.get('apiKey'));
+                    const rows = Array.isArray(data?.race?.results) ? data.race.results : (Array.isArray(data?.results) ? data.results : []);
+                    const results = new Map(rows.map(row => [String(row.driver_id), row]));
+                    this.raceResultCache.set(key, results);
+                    return results;
+                } finally {
+                    this.raceResultRequests.delete(key);
+                }
+            })();
+            this.raceResultRequests.set(key, request);
+            return request;
+        },
+
+        mergeApiRaceResults(results, apiResults) {
+            apiResults.forEach((apiResult, userId) => {
+                const existing = results.get(userId) || {};
+                const crashed = apiResult.has_crashed === true || existing.crashed === true;
+                const raceTime = Number(apiResult.race_time);
+                const bestLap = Number(apiResult.best_lap_time);
+                results.set(userId, {
+                    ...existing,
+                    userId,
+                    position: Number.isFinite(apiResult.position) ? apiResult.position : existing.position,
+                    crashed,
+                    raceTime: Number.isFinite(raceTime) ? raceTime : existing.raceTime,
+                    bestLap: !crashed && Number.isFinite(bestLap) ? bestLap : existing.bestLap ?? null,
+                    displayTime: existing.displayTime || (Number.isFinite(raceTime) ? Utils.formatTime(raceTime, true) : null)
+                });
+            });
+        },
+
+        async waitForRacePayload(raceId, attempts = 16) {
+            for (let attempt = 0; attempt < attempts; attempt++) {
+                if (this.latestRacePayload && String(this.latestRacePayload.raceID) === String(raceId)) return this.latestRacePayload;
+                await Utils.sleep(500);
+            }
+            throw new Error('Race payload was not captured.');
+        },
+
+        buildResultsFromLeaderboard(drivers) {
+            const results = new Map();
+            drivers.forEach((driver, index) => {
+                const originalRow = document.getElementById(driver.originalId);
+                const status = originalRow?.querySelector('.status-wrap > div');
+                const crashed = driver.statusClass === 'crashed' || status?.classList.contains('crash') || status?.classList.contains('crashed');
+                const time = originalRow?.querySelector('.time')?.textContent.trim() || null;
+                if (!crashed && !time) return;
+                results.set(String(driver.userId), { userId: String(driver.userId), position: index + 1, crashed, displayTime: time, bestLap: null });
+            });
+            return results;
+        },
+
+        buildResults(payload) {
+            const intervalsPerLap = payload.raceData.trackData.intervals.length;
+            const results = [];
+            const crashes = [];
+            Object.entries(payload.raceData.cars).forEach(([playerName, encodedIntervals]) => {
+                const userId = String(payload.raceData.carInfo[playerName]?.userID || '');
+                if (!userId) return;
+                const intervals = this.decodeIntervals(encodedIntervals);
+                if (intervals.length / intervalsPerLap !== Number(payload.laps)) {
+                    crashes.push({ userId, crashed: true });
+                    return;
+                }
+                let raceTime = 0;
+                let bestLap = Infinity;
+                for (let lap = 0; lap < Number(payload.laps); lap++) {
+                    const lapTime = intervals.slice(lap * intervalsPerLap, (lap + 1) * intervalsPerLap).reduce((total, value) => total + value, 0);
+                    raceTime += lapTime;
+                    bestLap = Math.min(bestLap, lapTime);
+                }
+                results.push({ userId, raceTime, bestLap, crashed: false });
+            });
+            results.sort((left, right) => left.raceTime - right.raceTime);
+            const byUserId = new Map();
+            results.forEach((result, index) => byUserId.set(result.userId, { ...result, position: index + 1 }));
+            crashes.forEach((result, index) => byUserId.set(result.userId, { ...result, position: results.length + index + 1 }));
+            return byUserId;
+        },
+
+        decodeIntervals(encoded) {
+            try { return atob(encoded).split(',').map(Number).filter(Number.isFinite); } catch (e) { return []; }
+        },
+
+        async loadSkills(userIds) {
+            const skills = new Map();
+            const missingIds = [];
+            userIds.forEach(userId => {
+                const cached = this.getCachedSkill(userId);
+                if (cached === null) missingIds.push(userId);
+                else skills.set(userId, cached);
+            });
+            if (missingIds.length) Utils.showNotification(`Loading racing skill for ${missingIds.length} racer${missingIds.length === 1 ? '' : 's'}…`);
+            for (let index = 0; index < missingIds.length; index++) {
+                const userId = missingIds[index];
+                const skill = await this.fetchSkill(userId);
+                if (Number.isFinite(skill)) {
+                    skills.set(userId, skill);
+                    this.saveSkill(userId, skill);
+                }
+                if (index < missingIds.length - 1) await Utils.sleep(index < 19 ? 250 : 1000);
+            }
+            return skills;
+        },
+
+        async fetchSkill(userId) {
+            const apiKey = Config.get('apiKey');
+            const url = `https://api.torn.com/v2/user?selections=personalstats&id=${encodeURIComponent(userId)}&cat=racing&key=${encodeURIComponent(apiKey)}`;
+            const data = await APIManager.fetchJson(url, { headers: { Accept: 'application/json' } });
+            const value = data?.personalstats?.racing?.skill ?? data?.personalstats?.racingskill;
+            const skill = Number(value);
+            return Number.isFinite(skill) ? skill : null;
+        },
+
     };
 
     const StatsCalculator = {
@@ -2357,9 +2603,77 @@
             txt += `Exported by Torn Racing Telemetry Script v${ScriptInfo.version}\n`;
             return txt;
         },
-        formatAsJSON() {
-             const data = this.getFinalData();
-             return JSON.stringify(data, null, 2);
+        getDetailedRaceFields() {
+            const values = {};
+            document.querySelectorAll('.car-selected.left .properties-wrap li, .car-selected.left div.cont-black.bottom-round > ul > li').forEach(item => {
+                const title = item.querySelector('.properties > .title')?.textContent.trim();
+                const separator = title?.indexOf(':');
+                if (separator > 0) values[title.slice(0, separator).trim()] = title.slice(separator + 1).trim();
+            });
+
+            return {
+                raceID: Number.parseInt(values.ID || State.currentRaceId, 10) || State.currentRaceId || null,
+                raceName: values.Name || '', eventType: values.Type || '',
+                timeCreated: values['Time created'] || '', timeStarted: values['Time started'] || '', timeEnded: values['Time ended'] || '',
+                trackName: values.Track || State.trackInfo.name || '', lapsAmount: values.Laps || String(State.trackInfo.laps || ''),
+                participantsAmount: values.Participants || String(State.finalRaceData.length), driversRequired: values['Drivers required'] || '',
+                maximumDrivers: values['Maximum Drivers'] || '', carsAllowed: values['Cars allowed'] || '',
+                upgradesAllowed: values['Upgrades allowed'] || '', betAmount: values['Bet amount'] || ''
+            };
+        },
+        async formatAsJSON() {
+            const liveDrivers = [...document.querySelectorAll('#leaderBoard > li[id^="lbr-"]')]
+                .map(row => RaceManager.parseDriverData(row))
+                .filter(Boolean);
+            const drivers = liveDrivers.length ? liveDrivers : State.finalRaceData;
+            if (!State.raceFinished || !drivers.length) throw new Error('JSON export is available after a race has finished.');
+
+            Utils.showNotification('Preparing detailed JSON export…');
+            const { results, skills } = await APIManager.raceData.getCompletedRaceData(drivers);
+            const raceFields = this.getDetailedRaceFields();
+            const skillGain = await APIManager.raceData.loadSkillGain(State.currentRaceId);
+            const exportedAt = new Date().toISOString();
+
+            // Core race-tracking fields stay at top level; telemetry adds
+            // richer native details without complicating simple imports.
+            const records = drivers.map((driver, index) => {
+                const result = results.get(String(driver.userId));
+                const crashed = Boolean(result?.crashed || driver.statusClass === 'crashed');
+                const finishTime = crashed ? 'crashed' : (result?.displayTime || driver.originalStatusText || '');
+                const inferredBestLap = !crashed && Number(raceFields.lapsAmount) === 1 ? Utils.parseTime(finishTime) : null;
+                const bestLapSeconds = Number.isFinite(result?.bestLap) ? result.bestLap : inferredBestLap;
+                const bestLap = crashed ? 'crashed' : (Number.isFinite(result?.bestLap)
+                    ? Utils.formatTime(result.bestLap, true)
+                    : (Number.isFinite(inferredBestLap) ? finishTime : 'N/A'));
+                const racingSkill = skills.get(driver.userId);
+                const driverSkillGain = String(driver.userId) === String(State.userId) && Number.isFinite(skillGain) ? skillGain : null;
+
+                return {
+                    userName: driver.name, position: result?.position || index + 1, finishTime, lapTime: bestLap,
+                    racingSkill: Number.isFinite(racingSkill) ? String(racingSkill) : '', userID: String(driver.userId), carUsed: driver.carTitle,
+                    ...raceFields,
+                    telemetry: {
+                        schemaVersion: ScriptInfo.version, exportedAt, status: driver.statusClass,
+                        progressPercent: driver.statusClass === 'finished' ? 100 : driver.progress,
+                        trackId: State.trackInfo.id ?? null, trackLength: State.trackInfo.length ?? null,
+                        bestLapSeconds: Number.isFinite(bestLapSeconds) ? bestLapSeconds : null,
+                        racingSkill: Number.isFinite(racingSkill) ? racingSkill : null,
+                        skillGain: driverSkillGain,
+                        // Preserve the information previously available in the
+                        // native nested JSON export as well.
+                        trackInfo: { ...State.trackInfo },
+                        nativeResult: {
+                            position: result?.position || index + 1,
+                            name: driver.name,
+                            userId: driver.userId,
+                            car: driver.carTitle,
+                            status: driver.statusClass,
+                            finalTimeOrStatus: driver.originalStatusText
+                        }
+                    }
+                };
+            });
+            return JSON.stringify(records, null, 2);
         },
         downloadData(dataString, fileExt, mimeType) {
             const blob = new Blob([dataString], { type: mimeType + ';charset=utf-8' });
@@ -2421,7 +2735,9 @@
 
             if (statusDiv) {
                 const classList = statusDiv.classList;
-                if (classList.contains('crashed')) {
+                // Torn's live leaderboard uses "crash"; retain "crashed" for
+                // any alternate/legacy markup.
+                if (classList.contains('crash') || classList.contains('crashed')) {
                     isCrashed = true;
                     statusClass = 'crashed';
                 } else if (classList.contains('gold') || classList.contains('silver') || classList.contains('bronze') || classList.contains('finished')) {
@@ -2559,6 +2875,17 @@
             nameDiv._displayName = name;
             nameDiv._displayIsSelf = isSelf;
         },
+        hideUnavailableMetricCards(detailsDiv) {
+            detailsDiv?.querySelectorAll('.driver-metric-item:not(.metric-est-lap)').forEach(card => {
+                const value = card.querySelector('.driver-metric-value')?.textContent.trim();
+                const unavailableValues = new Set([
+                    'N/A', '0.00%', '-/-', '-%',
+                    '- mph', '0 mph', '0.0 mph',
+                    '- g', '0 g', '0.000 g'
+                ]);
+                card.style.display = unavailableValues.has(value) ? 'none' : '';
+            });
+        },
         ensureElementRefs(element) {
             if (element?._uiRefs?.colorIndicator && element?._uiRefs?.telemetryDiv) {
                 return element._uiRefs;
@@ -2628,10 +2955,14 @@
 
             const carImg = refs.carImg;
             const newCarSrc = Utils.makeAbsoluteUrl(driverData.carImgRaw);
-            if (carImg && carImg.getAttribute('src') !== newCarSrc) {
-                carImg.src = newCarSrc;
-                carImg.alt = driverData.carTitle;
-                carImg.title = driverData.carTitle;
+            if (carImg) {
+                if (carImg.getAttribute('src') !== newCarSrc) {
+                    carImg.src = newCarSrc;
+                }
+                if (carImg.alt !== driverData.carTitle || carImg.title !== driverData.carTitle) {
+                    carImg.alt = driverData.carTitle;
+                    carImg.title = driverData.carTitle;
+                }
             }
 
             this.setDriverName(refs.nameDiv, driverData.name, isSelf);
@@ -2654,7 +2985,7 @@
                     let telemetryColor = 'var(--telemetry-default-color)';
 
                     if (driverData.statusClass === 'crashed') {
-                        telemetryText = '\u{1F4A5} CRASHED';
+                        telemetryText = 'Crashed';
                         telemetryColor = 'var(--telemetry-decel-color)';
                     } else if (driverData.statusClass === 'finished') {
                         const finishTime = Utils.parseTime(driverData.originalStatusText);
@@ -2814,6 +3145,18 @@
                                     <span class="driver-metric-value detail-stat detail-progress">${driverData.progress.toFixed(2)}%</span>
                                 </div>
                                 <div class="driver-metric-item">
+                                    <span class="driver-metric-label">Skill Gained</span>
+                                    <span class="driver-metric-value detail-skill-gain">${isSelf ? APIManager.raceData.getSkillGainDisplay(State.currentRaceId) : 'N/A'}</span>
+                                </div>
+                                <div class="driver-metric-item">
+                                    <span class="driver-metric-label">Race Time</span>
+                                    <span class="driver-metric-value detail-race-time">N/A</span>
+                                </div>
+                                <div class="driver-metric-item">
+                                    <span class="driver-metric-label">Best Lap</span>
+                                    <span class="driver-metric-value detail-best-lap">N/A</span>
+                                </div>
+                                <div class="driver-metric-item">
                                     <span class="driver-metric-label">Lap</span>
                                     <span class="driver-metric-value detail-stat detail-lap">-/-</span>
                                 </div>
@@ -2854,6 +3197,33 @@
 
                     updateDetailStat('.detail-position', driverData.statusClass === 'crashed' ? 'Crashed' : position, '-', false);
                     updateDetailStat('.detail-progress', `${driverData.progress.toFixed(2)}%`, '0.00%', false);
+                    const skillGainEl = detailsDiv.querySelector('.detail-skill-gain');
+                    if (skillGainEl && isSelf && driverData.statusClass === 'finished') {
+                        APIManager.raceData.loadSkillGain(State.currentRaceId)
+                            .then(() => {
+                                skillGainEl.textContent = APIManager.raceData.getSkillGainDisplay(State.currentRaceId);
+                                this.hideUnavailableMetricCards(detailsDiv);
+                            })
+                            .catch(() => {
+                                skillGainEl.textContent = 'N/A';
+                                this.hideUnavailableMetricCards(detailsDiv);
+                            });
+                    }
+
+                    if (driverData.statusClass === 'finished') {
+                        APIManager.raceData.loadApiRaceResults(State.currentRaceId)
+                            .then(results => {
+                                const result = results.get(String(driverId));
+                                const raceTime = Number(result?.race_time);
+                                const bestLap = Number(result?.best_lap_time);
+                                const raceTimeEl = detailsDiv.querySelector('.detail-race-time');
+                                const bestLapEl = detailsDiv.querySelector('.detail-best-lap');
+                                if (raceTimeEl) raceTimeEl.textContent = Number.isFinite(raceTime) ? Utils.formatTime(raceTime, true) : 'N/A';
+                                if (bestLapEl) bestLapEl.textContent = Number.isFinite(bestLap) ? Utils.formatTime(bestLap, true) : 'N/A';
+                                this.hideUnavailableMetricCards(detailsDiv);
+                            })
+                            .catch(() => this.hideUnavailableMetricCards(detailsDiv));
+                    }
 
                     const statusEl = detailsDiv.querySelector('.detail-status');
                     if (statusEl) statusEl.textContent = driverData.statusClass;
@@ -2899,6 +3269,7 @@
                             setTimeout(() => APIManager.fetchAndDisplayRacingStats(element, driverId), 50);
                         }
                     }
+                    this.hideUnavailableMetricCards(detailsDiv);
                 }
             }
 
@@ -2916,6 +3287,11 @@
             }
 
             State.isUpdating = true;
+            // Track metadata changes reset race state. Reacquire the ID here so finished
+            // race adapters still have it on first render and when viewing historic logs.
+            if (!State.currentRaceId) {
+                State.currentRaceId = this.getRaceId();
+            }
             const savedScrollTop = State.customUIContainer.scrollTop;
             const hadFocus = document.activeElement === State.customUIContainer || State.customUIContainer.contains(document.activeElement);
             const originalListItems = Array.from(State.originalLeaderboard.querySelectorAll(':scope > li[id^="lbr-"]'));
@@ -2969,6 +3345,10 @@
                 State.raceFinished = true;
                 State.finalRaceData = newDriversData;
                 UI.updateControlButtonsVisibility();
+            } else if (allDriversFinished) {
+                // Torn can populate image titles after the result rows first render.
+                // Keep the export snapshot aligned with the latest original markup.
+                State.finalRaceData = newDriversData;
             } else if (!allDriversFinished && State.raceFinished) {
                 State.raceFinished = false;
                 State.finalRaceData = [];
@@ -3525,6 +3905,7 @@
             State.originalLeaderboard = document.getElementById('leaderBoard');
             const originalScrollbarContainer = document.getElementById('drivers-scrollbar');
             if (!State.originalLeaderboard || !originalScrollbarContainer) { throw new Error("Leaderboard elements not found."); }
+            APIManager.raceData.install();
             const parentContainer = originalScrollbarContainer.parentNode;
 
             if (!State.controlsContainer) {

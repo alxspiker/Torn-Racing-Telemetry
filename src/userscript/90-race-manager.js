@@ -32,7 +32,9 @@
 
             if (statusDiv) {
                 const classList = statusDiv.classList;
-                if (classList.contains('crashed')) {
+                // Torn's live leaderboard uses "crash"; retain "crashed" for
+                // any alternate/legacy markup.
+                if (classList.contains('crash') || classList.contains('crashed')) {
                     isCrashed = true;
                     statusClass = 'crashed';
                 } else if (classList.contains('gold') || classList.contains('silver') || classList.contains('bronze') || classList.contains('finished')) {
@@ -170,6 +172,17 @@
             nameDiv._displayName = name;
             nameDiv._displayIsSelf = isSelf;
         },
+        hideUnavailableMetricCards(detailsDiv) {
+            detailsDiv?.querySelectorAll('.driver-metric-item:not(.metric-est-lap)').forEach(card => {
+                const value = card.querySelector('.driver-metric-value')?.textContent.trim();
+                const unavailableValues = new Set([
+                    'N/A', '0.00%', '-/-', '-%',
+                    '- mph', '0 mph', '0.0 mph',
+                    '- g', '0 g', '0.000 g'
+                ]);
+                card.style.display = unavailableValues.has(value) ? 'none' : '';
+            });
+        },
         ensureElementRefs(element) {
             if (element?._uiRefs?.colorIndicator && element?._uiRefs?.telemetryDiv) {
                 return element._uiRefs;
@@ -239,10 +252,14 @@
 
             const carImg = refs.carImg;
             const newCarSrc = Utils.makeAbsoluteUrl(driverData.carImgRaw);
-            if (carImg && carImg.getAttribute('src') !== newCarSrc) {
-                carImg.src = newCarSrc;
-                carImg.alt = driverData.carTitle;
-                carImg.title = driverData.carTitle;
+            if (carImg) {
+                if (carImg.getAttribute('src') !== newCarSrc) {
+                    carImg.src = newCarSrc;
+                }
+                if (carImg.alt !== driverData.carTitle || carImg.title !== driverData.carTitle) {
+                    carImg.alt = driverData.carTitle;
+                    carImg.title = driverData.carTitle;
+                }
             }
 
             this.setDriverName(refs.nameDiv, driverData.name, isSelf);
@@ -265,7 +282,7 @@
                     let telemetryColor = 'var(--telemetry-default-color)';
 
                     if (driverData.statusClass === 'crashed') {
-                        telemetryText = '\u{1F4A5} CRASHED';
+                        telemetryText = 'Crashed';
                         telemetryColor = 'var(--telemetry-decel-color)';
                     } else if (driverData.statusClass === 'finished') {
                         const finishTime = Utils.parseTime(driverData.originalStatusText);
@@ -425,6 +442,18 @@
                                     <span class="driver-metric-value detail-stat detail-progress">${driverData.progress.toFixed(2)}%</span>
                                 </div>
                                 <div class="driver-metric-item">
+                                    <span class="driver-metric-label">Skill Gained</span>
+                                    <span class="driver-metric-value detail-skill-gain">${isSelf ? APIManager.raceData.getSkillGainDisplay(State.currentRaceId) : 'N/A'}</span>
+                                </div>
+                                <div class="driver-metric-item">
+                                    <span class="driver-metric-label">Race Time</span>
+                                    <span class="driver-metric-value detail-race-time">N/A</span>
+                                </div>
+                                <div class="driver-metric-item">
+                                    <span class="driver-metric-label">Best Lap</span>
+                                    <span class="driver-metric-value detail-best-lap">N/A</span>
+                                </div>
+                                <div class="driver-metric-item">
                                     <span class="driver-metric-label">Lap</span>
                                     <span class="driver-metric-value detail-stat detail-lap">-/-</span>
                                 </div>
@@ -465,6 +494,33 @@
 
                     updateDetailStat('.detail-position', driverData.statusClass === 'crashed' ? 'Crashed' : position, '-', false);
                     updateDetailStat('.detail-progress', `${driverData.progress.toFixed(2)}%`, '0.00%', false);
+                    const skillGainEl = detailsDiv.querySelector('.detail-skill-gain');
+                    if (skillGainEl && isSelf && driverData.statusClass === 'finished') {
+                        APIManager.raceData.loadSkillGain(State.currentRaceId)
+                            .then(() => {
+                                skillGainEl.textContent = APIManager.raceData.getSkillGainDisplay(State.currentRaceId);
+                                this.hideUnavailableMetricCards(detailsDiv);
+                            })
+                            .catch(() => {
+                                skillGainEl.textContent = 'N/A';
+                                this.hideUnavailableMetricCards(detailsDiv);
+                            });
+                    }
+
+                    if (driverData.statusClass === 'finished') {
+                        APIManager.raceData.loadApiRaceResults(State.currentRaceId)
+                            .then(results => {
+                                const result = results.get(String(driverId));
+                                const raceTime = Number(result?.race_time);
+                                const bestLap = Number(result?.best_lap_time);
+                                const raceTimeEl = detailsDiv.querySelector('.detail-race-time');
+                                const bestLapEl = detailsDiv.querySelector('.detail-best-lap');
+                                if (raceTimeEl) raceTimeEl.textContent = Number.isFinite(raceTime) ? Utils.formatTime(raceTime, true) : 'N/A';
+                                if (bestLapEl) bestLapEl.textContent = Number.isFinite(bestLap) ? Utils.formatTime(bestLap, true) : 'N/A';
+                                this.hideUnavailableMetricCards(detailsDiv);
+                            })
+                            .catch(() => this.hideUnavailableMetricCards(detailsDiv));
+                    }
 
                     const statusEl = detailsDiv.querySelector('.detail-status');
                     if (statusEl) statusEl.textContent = driverData.statusClass;
@@ -510,6 +566,7 @@
                             setTimeout(() => APIManager.fetchAndDisplayRacingStats(element, driverId), 50);
                         }
                     }
+                    this.hideUnavailableMetricCards(detailsDiv);
                 }
             }
 
@@ -527,6 +584,11 @@
             }
 
             State.isUpdating = true;
+            // Track metadata changes reset race state. Reacquire the ID here so finished
+            // race adapters still have it on first render and when viewing historic logs.
+            if (!State.currentRaceId) {
+                State.currentRaceId = this.getRaceId();
+            }
             const savedScrollTop = State.customUIContainer.scrollTop;
             const hadFocus = document.activeElement === State.customUIContainer || State.customUIContainer.contains(document.activeElement);
             const originalListItems = Array.from(State.originalLeaderboard.querySelectorAll(':scope > li[id^="lbr-"]'));
@@ -580,6 +642,10 @@
                 State.raceFinished = true;
                 State.finalRaceData = newDriversData;
                 UI.updateControlButtonsVisibility();
+            } else if (allDriversFinished) {
+                // Torn can populate image titles after the result rows first render.
+                // Keep the export snapshot aligned with the latest original markup.
+                State.finalRaceData = newDriversData;
             } else if (!allDriversFinished && State.raceFinished) {
                 State.raceFinished = false;
                 State.finalRaceData = [];
