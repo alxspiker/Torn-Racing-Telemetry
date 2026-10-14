@@ -37,7 +37,8 @@
                     trackStats[trackId].crashes++;
                     carStats[carName].crashes++;
                 } else {
-                    const position = userResult.position;
+                    const position = Number(userResult.position);
+                    if (!Number.isInteger(position) || position < 1) return;
                     overall.positionSum += position;
                     trackStats[trackId].positionSum += position;
                     carStats[carName].positionSum += position;
@@ -58,8 +59,9 @@
             });
             const calcRates = (stats) => {
                 const finishedRaces = stats.races - stats.crashes;
-                stats.winRate = finishedRaces > 0 ? (stats.wins / finishedRaces) * 100 : 0;
-                stats.podiumRate = finishedRaces > 0 ? (stats.podiums / finishedRaces) * 100 : 0;
+                // A crashed entry still counts as a race entered, including for win rate.
+                stats.winRate = stats.races > 0 ? (stats.wins / stats.races) * 100 : 0;
+                stats.podiumRate = stats.races > 0 ? (stats.podiums / stats.races) * 100 : 0;
                 stats.crashRate = stats.races > 0 ? (stats.crashes / stats.races) * 100 : 0;
                 stats.avgPosition = finishedRaces > 0 ? (stats.positionSum / finishedRaces) : 0;
                 return stats;

@@ -16,18 +16,19 @@
         },
         formatAsHTML() {
             const data = this.getFinalData();
+            const esc = Utils.escapeHTML;
             let tableRows = data.results.map(r => `
                 <tr>
                     <td>${r.position}</td>
-                    <td><a href="https://www.torn.com/profiles.php?XID=${r.userId}" target="_blank">${r.name} [${r.userId}]</a></td>
-                    <td>${r.car}</td>
-                    <td>${r.status === 'finished' ? r.finalTimeOrStatus : r.status.toUpperCase()}</td>
+                    <td><a href="https://www.torn.com/profiles.php?XID=${encodeURIComponent(r.userId)}" target="_blank" rel="noopener noreferrer">${esc(r.name)} [${esc(r.userId)}]</a></td>
+                    <td>${esc(r.car)}</td>
+                    <td>${esc(r.status === 'finished' ? r.finalTimeOrStatus : r.status.toUpperCase())}</td>
                 </tr>`).join('');
 
             return `<!DOCTYPE html>
 <html>
 <head>
-<title>Torn Race Results - ${data.trackInfo.name || 'Unknown Track'}</title>
+<title>Torn Race Results - ${esc(data.trackInfo.name || 'Unknown Track')}</title>
 <meta charset="UTF-8">
 <style>
     body { font-family: sans-serif; line-height: 1.4; background-color: #f0f0f0; color: #333; margin: 20px; }
@@ -42,8 +43,8 @@
 </head>
 <body>
     <h1>Race Results</h1>
-    <h2>Race ID: ${data.raceId || 'N/A'}</h2>
-    <h2>Track: ${data.trackInfo.name || 'Unknown'} (${data.trackInfo.laps} Laps, ${data.trackInfo.length} Miles)</h2>
+    <h2>Race ID: ${esc(data.raceId || 'N/A')}</h2>
+    <h2>Track: ${esc(data.trackInfo.name || 'Unknown')} (${esc(data.trackInfo.laps)} Laps, ${esc(data.trackInfo.length)} Miles)</h2>
     <table>
         <thead>
             <tr><th>Pos</th><th>Driver</th><th>Car</th><th>Time/Status</th></tr>
@@ -58,15 +59,16 @@
         },
         formatAsMarkdown() {
             const data = this.getFinalData();
+            const esc = Utils.escapeMarkdownCell;
             let md = `# Race Results\n\n`;
             md += `**Race ID:** ${data.raceId || 'N/A'}\n`;
             md += `**Track:** ${data.trackInfo.name || 'Unknown'} (${data.trackInfo.laps} Laps, ${data.trackInfo.length} Miles)\n\n`;
             md += `| Pos | Driver | Car | Time/Status |\n`;
             md += `|----:|--------|-----|-------------|\n`;
             data.results.forEach(r => {
-                const driverLink = `[${r.name} [${r.userId}]](https://www.torn.com/profiles.php?XID=${r.userId})`;
+                const driverLink = `[${esc(r.name)} [${esc(r.userId)}]](https://www.torn.com/profiles.php?XID=${encodeURIComponent(r.userId)})`;
                 const status = r.status === 'finished' ? r.finalTimeOrStatus : r.status.toUpperCase();
-                md += `| ${r.position} | ${driverLink} | ${r.car} | ${status} |\n`;
+                md += `| ${r.position} | ${driverLink} | ${esc(r.car)} | ${esc(status)} |\n`;
             });
             md += `\n*Exported by Torn Racing Telemetry Script v${ScriptInfo.version}*`;
             return md;
@@ -145,8 +147,8 @@
                 const crashed = Boolean(result?.crashed || driver.statusClass === 'crashed');
                 const finishTime = crashed ? 'crashed' : (result?.displayTime || driver.originalStatusText || '');
                 const inferredBestLap = !crashed && Number(raceFields.lapsAmount) === 1 ? Utils.parseTime(finishTime) : null;
-                const bestLapSeconds = Number.isFinite(result?.bestLap) ? result.bestLap : inferredBestLap;
-                const bestLap = crashed ? 'crashed' : (Number.isFinite(result?.bestLap)
+                const bestLapSeconds = result?.bestLap != null && Number.isFinite(result.bestLap) ? result.bestLap : inferredBestLap;
+                const bestLap = crashed ? 'crashed' : (result?.bestLap != null && Number.isFinite(result.bestLap)
                     ? Utils.formatTime(result.bestLap, true)
                     : (Number.isFinite(inferredBestLap) ? finishTime : 'N/A'));
                 const racingSkill = skills.get(driver.userId);
@@ -190,17 +192,18 @@
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
-            URL.revokeObjectURL(url);
+            // Revoking synchronously can abort downloads in WebKit/Torn PDA.
+            setTimeout(() => URL.revokeObjectURL(url), 30000);
         },
-        copyToClipboard(text) {
-             if (typeof GM_setClipboard !== 'undefined') {
-                 GM_setClipboard(text);
-             } else if (navigator.clipboard && navigator.clipboard.writeText) {
-                navigator.clipboard.writeText(text).catch(err => {
-                     Utils.showNotification('Failed to copy to clipboard.', 'error');
-                 });
-             } else {
-                Utils.showNotification('Clipboard copy not supported by browser/script manager.', 'error');
-             }
+        async copyToClipboard(text) {
+            if (typeof GM_setClipboard === 'function') {
+                GM_setClipboard(text);
+                return;
+            }
+            if (navigator.clipboard?.writeText) {
+                await navigator.clipboard.writeText(text);
+                return;
+            }
+            throw new Error('Clipboard copying is unavailable in this browser or userscript manager.');
         }
     };

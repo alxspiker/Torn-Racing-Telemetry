@@ -122,16 +122,16 @@
                 return { speed: 0, acceleration: 0, timeDelta: dtSinceLastUpdate * 1000, noUpdate: true };
             }
 
-            // REVISED: Stale data handling. If no update for a while, decay speed.
-            if (dtSinceLastUpdate * 1000 > staleThresholdMs) {
-                const decayFactor = 0.85;
-                const decayedSpeed = prev.reportedSpeed * decayFactor;
-                const gentleDeceleration = -0.5;
+            const progressChangedSinceSample = Math.abs(progressPercentage - prev.lastProgressValueAtChange) > 0.001;
+            // Delayed *new* progress is still usable: calculate over the full elapsed
+            // interval. Only decay an estimate when no new race progress has arrived.
+            if (dtSinceLastUpdate * 1000 > staleThresholdMs && !progressChangedSinceSample) {
+                const decay = Math.exp(-Math.min(dtSinceLastUpdate, 30) / 3);
+                prev.reportedSpeed = Math.max(0, prev.reportedSpeed * decay);
+                prev.acceleration = 0; // Unknown, not a physical braking event.
                 prev.time = timestamp;
-                prev.reportedSpeed = decayedSpeed;
-                prev.acceleration = this.ema(gentleDeceleration, prev.acceleration, 0.1);
                 prev.wasStale = true;
-                return { speed: prev.reportedSpeed, acceleration: prev.acceleration, timeDelta: dtSinceLastUpdate * 1000, noUpdate: false };
+                return { speed: prev.reportedSpeed, acceleration: 0, timeDelta: dtSinceLastUpdate * 1000, noUpdate: true };
             }
 
             if (dtSinceLastUpdate < minDt) {
@@ -144,6 +144,10 @@
             const progressChanged = Math.abs(progressPercentage - prev.lastProgressValueAtChange) > epsilon;
             let distanceDelta = 0;
 
+            if (progressPercentage + epsilon < prev.lastProgressValueAtChange) {
+                delete State.previousMetrics[driverId];
+                return this.calculateDriverMetrics(driverId, progressPercentage, timestamp);
+            }
             if (progressChanged) {
                  const dtSinceChange = (timestamp - prev.lastProgressChangeTimestamp) / 1000;
                  const progressDeltaSinceChange = progressPercentage - prev.lastProgressValueAtChange;

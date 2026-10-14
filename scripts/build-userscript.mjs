@@ -24,6 +24,8 @@ if (!bundle.startsWith('// ==UserScript==')) {
     throw new Error('The generated bundle is missing the userscript header.');
 }
 
+writeFileSync(path.join(repoRoot, 'tornracingtelemetry.user.js'), bundle, 'utf8');
+
 const previousBundle = existsSync(outputFile)
     ? readFileSync(outputFile, 'utf8')
     : null;

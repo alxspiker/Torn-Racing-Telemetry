@@ -58,6 +58,14 @@
 
             return element;
         },
+        escapeHTML(value) {
+            return String(value ?? '').replace(/[&<>"']/g, character => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            })[character]);
+        },
+        escapeMarkdownCell(value) {
+            return String(value ?? '').replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
+        },
         escapeCSVField(field) {
             if (field === null || field === undefined) {
                 return '';
