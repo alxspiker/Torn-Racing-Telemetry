@@ -184,17 +184,6 @@
                 item.classList.toggle('map-selected', item.dataset.originalId === selectedOriginalId);
             });
         },
-        hideUnavailableMetricCards(detailsDiv) {
-            detailsDiv?.querySelectorAll('.driver-metric-item:not(.metric-est-lap)').forEach(card => {
-                const value = card.querySelector('.driver-metric-value')?.textContent.trim();
-                const unavailableValues = new Set([
-                    'N/A', '0.00%', '-/-', '-%',
-                    '- mph', '0 mph', '0.0 mph',
-                    '- g', '0 g', '0.000 g'
-                ]);
-                card.style.display = unavailableValues.has(value) ? 'none' : '';
-            });
-        },
         ensureElementRefs(element) {
             if (element?._uiRefs?.colorIndicator && element?._uiRefs?.telemetryDiv) {
                 return element._uiRefs;
@@ -208,8 +197,7 @@
                 progressBars: element.querySelector('.driver-progress-bars'),
                 fullProgressBar: element.querySelector('.driver-progress-full .driver-progress-fill'),
                 lapProgressBar: element.querySelector('.driver-progress-lap .driver-progress-fill'),
-                detailsButton: element.querySelector('.driver-details-toggle'),
-                detailsDiv: element.querySelector('.driver-details')
+                detailsButton: element.querySelector('.driver-details-toggle')
             };
             return element._uiRefs;
         },
@@ -218,6 +206,8 @@
             item.className = 'custom-driver-item';
             item.dataset.originalId = driverData.originalId;
             item.dataset.userId = driverData.userId;
+            item.tabIndex = 0;
+            item.setAttribute('aria-label', `Select ${driverData.name} on the race map`);
 
             const isSelf = driverData.userId === State.userId;
             if (isSelf) item.classList.add('is-self');
@@ -245,21 +235,19 @@
             progressBars.append(fullProgressTrack, lapProgressTrack);
             const detailsButton = Utils.createElement('button', {
                 className: 'driver-details-toggle',
-                text: '+',
+                text: '↗',
                 attrs: {
                     type: 'button',
-                    'aria-label': 'Show driver details',
-                    'aria-expanded': 'false'
+                    'aria-label': 'Open driver inspector'
                 }
             });
-            const detailsDiv = Utils.createElement('div', { className: 'driver-details' });
 
             this.setDriverName(nameDiv, driverData.name, isSelf);
             Telemetry.ensureDisplayRefs(telemetryDiv);
 
             infoRow.append(colorIndicator, carImg, nameDiv, telemetryDiv, detailsButton);
-            item.append(infoRow, progressBars, detailsDiv);
-            item._uiRefs = { colorIndicator, carImg, nameDiv, telemetryDiv, progressBars, fullProgressBar, lapProgressBar, detailsButton, detailsDiv };
+            item.append(infoRow, progressBars);
+            item._uiRefs = { colorIndicator, carImg, nameDiv, telemetryDiv, progressBars, fullProgressBar, lapProgressBar, detailsButton };
 
             this.updateDriverElement(item, driverData, position);
             return item;
@@ -268,17 +256,16 @@
             const driverId = driverData.userId;
             const isSelf = driverId === State.userId;
             const now = Date.now();
-            const detailsVisible = element.classList.contains('details-visible');
             const driverState = State.previousMetrics[driverId];
             const refs = this.ensureElementRefs(element);
 
             const mapSelected = document.getElementById(driverData.originalId)?.classList.contains('selected');
-            element.className = `custom-driver-item status-${driverData.statusClass} ${isSelf ? 'is-self' : ''} ${detailsVisible ? 'details-visible' : ''} ${mapSelected ? 'map-selected' : ''}`.trim().replace(/\s+/g, ' ');
+            element.className = `custom-driver-item status-${driverData.statusClass} ${isSelf ? 'is-self' : ''} ${mapSelected ? 'map-selected' : ''}`.trim().replace(/\s+/g, ' ');
 
             if (refs.detailsButton) {
-                refs.detailsButton.textContent = detailsVisible ? '−' : '+';
-                refs.detailsButton.setAttribute('aria-label', detailsVisible ? 'Hide driver details' : 'Show driver details');
-                refs.detailsButton.setAttribute('aria-expanded', String(detailsVisible));
+                refs.detailsButton.textContent = '↗';
+                refs.detailsButton.setAttribute('aria-label', `Open details for ${driverData.name}`);
+                refs.detailsButton.setAttribute('title', 'Open driver inspector');
             }
 
             const colorIndicator = refs.colorIndicator;
@@ -329,9 +316,7 @@
                         telemetryText = `\u{1F3C1} ${finishTimeText}`;
                     } else {
                         const displayParts = [];
-                        if (displayOptions.includes('speed')) displayParts.push(`0 ${speedUnitLabel}`);
-                        if (displayOptions.includes('acceleration')) displayParts.push('0.0 g');
-                        telemetryText = displayParts.length > 0 ? displayParts.join(' | ') : '-';
+                        telemetryText = 'Waiting';
                     }
 
                     Telemetry.setTelemetryDisplay(telemetryDiv, telemetryText, telemetryColor);
@@ -340,7 +325,7 @@
                     const targetSpeed = Utils.convertSpeed(metrics.speed, speedUnit);
                     const targetAcc = metrics.acceleration;
 
-                    if (Config.get('showLapEstimate') && driverData.progress < 100 && State.trackInfo.id && driverState) {
+                    if (Config.get('showLapEstimate') && driverData.progress < 100 && State.trackInfo.length > 0 && State.previousMetrics[driverId]) {
                         Telemetry.calculateSmoothedLapEstimate(driverId, metrics);
                     }
 
@@ -417,195 +402,11 @@
                 refs.progressBars.removeAttribute('title');
             }
 
-            const detailsDiv = refs.detailsDiv;
-            if (detailsDiv) {
-                const needsHTMLStructure = detailsVisible && !detailsDiv.hasChildNodes();
-                if (needsHTMLStructure) {
-                    const apiStatsHTML = Config.get('fetchApiStatsOnClick')
-                        ? `
-                            <div class="api-stats-container">
-                                <div class="driver-section-title">API Racing Stats</div>
-                                <div class="driver-api-grid">
-                                    <div class="driver-api-item">
-                                        <span class="driver-api-label">Skill</span>
-                                        <span class="driver-api-value"><span class="api-stat stat-skill">...</span></span>
-                                    </div>
-                                    <div class="driver-api-item">
-                                        <span class="driver-api-label">Points</span>
-                                        <span class="driver-api-value"><span class="api-stat stat-points">...</span></span>
-                                    </div>
-                                    <div class="driver-api-item">
-                                        <span class="driver-api-label">Races</span>
-                                        <span class="driver-api-value"><span class="api-stat stat-races-entered">...</span> (<span class="api-stat stat-races-won">...</span> wins)</span>
-                                    </div>
-                                    <div class="driver-api-item">
-                                        <span class="driver-api-label">Win Rate</span>
-                                        <span class="driver-api-value"><span class="api-stat stat-win-rate">...</span></span>
-                                    </div>
-                                </div>
-                                <span class="api-stat-error-msg"></span>
-                            </div>`
-                        : '';
-
-                    detailsDiv.innerHTML = `
-                        <div class="driver-details-shell">
-                            <div class="driver-details-topline">
-                                <div class="driver-identity">
-                                    <span class="driver-identity-label">User</span>
-                                    <span class="driver-identity-value">${driverData.name} [<a href="/profiles.php?XID=${driverId}" target="_blank" rel="noopener noreferrer" title="View Profile">${driverId}</a>] ${isSelf ? '<strong>(You)</strong>' : ''}</span>
-                                </div>
-                                <div class="driver-status-wrap">
-                                    <span class="driver-identity-label">Status</span>
-                                    <span class="driver-status-chip detail-status">${driverData.statusClass}</span>
-                                    <span class="detail-original-status"></span>
-                                </div>
-                            </div>
-                            <div class="driver-meta-row">
-                                <span class="driver-identity-label">Car</span>
-                                <span class="driver-identity-value">${driverData.carTitle}</span>
-                            </div>
-                            <div class="driver-metrics-grid">
-                                <div class="driver-metric-item">
-                                    <span class="driver-metric-label">Position</span>
-                                    <span class="driver-metric-value detail-stat detail-position">${driverData.statusClass === 'crashed' ? 'Crashed' : position}</span>
-                                </div>
-                                <div class="driver-metric-item">
-                                    <span class="driver-metric-label">Progress</span>
-                                    <span class="driver-metric-value detail-stat detail-progress">${driverData.progress.toFixed(2)}%</span>
-                                </div>
-                                <div class="driver-metric-item">
-                                    <span class="driver-metric-label">Skill Gained</span>
-                                    <span class="driver-metric-value detail-skill-gain">${isSelf ? APIManager.raceData.getSkillGainDisplay(State.currentRaceId) : 'N/A'}</span>
-                                </div>
-                                <div class="driver-metric-item">
-                                    <span class="driver-metric-label">Race Time</span>
-                                    <span class="driver-metric-value detail-race-time">N/A</span>
-                                </div>
-                                <div class="driver-metric-item">
-                                    <span class="driver-metric-label">Best Lap</span>
-                                    <span class="driver-metric-value detail-best-lap">N/A</span>
-                                </div>
-                                <div class="driver-metric-item">
-                                    <span class="driver-metric-label">Lap</span>
-                                    <span class="driver-metric-value detail-stat detail-lap">-/-</span>
-                                </div>
-                                <div class="driver-metric-item">
-                                    <span class="driver-metric-label">Lap Progress</span>
-                                    <span class="driver-metric-value detail-stat detail-lap-progress">-%</span>
-                                </div>
-                                <div class="driver-metric-item">
-                                    <span class="driver-metric-label">Calc Speed</span>
-                                    <span class="driver-metric-value"><span class="detail-stat detail-calc-speed">-</span><span class="metric-unit"> mph</span></span>
-                                </div>
-                                <div class="driver-metric-item">
-                                    <span class="driver-metric-label">Calc Accel</span>
-                                    <span class="driver-metric-value"><span class="detail-stat detail-calc-accel">-</span><span class="metric-unit"> g</span></span>
-                                </div>
-                                <div class="driver-metric-item metric-est-lap p-est-lap-time" style="display: none;">
-                                    <span class="driver-metric-label">Est. Lap Time</span>
-                                    <span class="driver-metric-value detail-stat detail-est-lap-time">N/A</span>
-                                </div>
-                            </div>
-                            ${apiStatsHTML}
-                            <div class="driver-details-footer">Source ID: ${driverData.originalId}</div>
-                        </div>`;
-
-                    if (Config.get('fetchApiStatsOnClick') && driverId && !element.hasAttribute('data-stats-loaded') && !APIManager.isFetching.has(driverId)) {
-                        setTimeout(() => APIManager.fetchAndDisplayRacingStats(element, driverId), 50);
-                    }
-                }
-
-                if (detailsVisible) {
-                    const updateDetailStat = (selector, value, placeholder = '-', isLiveData = true) => {
-                        const detailEl = detailsDiv.querySelector(selector);
-                        const usePlaceholder = isLiveData && driverData.statusClass !== 'racing';
-                        if (detailEl) {
-                            detailEl.textContent = usePlaceholder ? placeholder : value;
-                        }
-                    };
-
-                    updateDetailStat('.detail-position', driverData.statusClass === 'crashed' ? 'Crashed' : position, '-', false);
-                    updateDetailStat('.detail-progress', `${driverData.progress.toFixed(2)}%`, '0.00%', false);
-                    const skillGainEl = detailsDiv.querySelector('.detail-skill-gain');
-                    if (skillGainEl && isSelf && driverData.statusClass === 'finished') {
-                        APIManager.raceData.loadSkillGain(State.currentRaceId)
-                            .then(() => {
-                                skillGainEl.textContent = APIManager.raceData.getSkillGainDisplay(State.currentRaceId);
-                                this.hideUnavailableMetricCards(detailsDiv);
-                            })
-                            .catch(() => {
-                                skillGainEl.textContent = 'N/A';
-                                this.hideUnavailableMetricCards(detailsDiv);
-                            });
-                    }
-
-                    if (driverData.statusClass === 'finished') {
-                        APIManager.raceData.loadApiRaceResults(State.currentRaceId)
-                            .then(results => {
-                                const result = results.get(String(driverId));
-                                const raceTime = Number(result?.race_time);
-                                const bestLap = Number(result?.best_lap_time);
-                                const raceTimeEl = detailsDiv.querySelector('.detail-race-time');
-                                const bestLapEl = detailsDiv.querySelector('.detail-best-lap');
-                                if (raceTimeEl) raceTimeEl.textContent = Number.isFinite(raceTime) ? Utils.formatTime(raceTime, true) : 'N/A';
-                                if (bestLapEl) bestLapEl.textContent = Number.isFinite(bestLap) ? Utils.formatTime(bestLap, true) : 'N/A';
-                                this.hideUnavailableMetricCards(detailsDiv);
-                            })
-                            .catch(() => this.hideUnavailableMetricCards(detailsDiv));
-                    }
-
-                    const statusEl = detailsDiv.querySelector('.detail-status');
-                    if (statusEl) statusEl.textContent = driverData.statusClass;
-
-                    const statusSpan = detailsDiv.querySelector('.detail-original-status');
-                    if (statusSpan) {
-                        statusSpan.textContent = (driverData.originalStatusText && !['finished', 'crashed'].includes(driverData.statusClass))
-                            ? `(${driverData.originalStatusText})`
-                            : '';
-                    }
-
-                    if (driverState || driverData.statusClass !== 'racing') {
-                        updateDetailStat('.detail-lap', `${driverState?.currentLap || '-'}/${State.trackInfo.laps || '-'}`, '-/-');
-                        updateDetailStat('.detail-lap-progress', `${driverState?.progressInLap !== undefined ? driverState.progressInLap.toFixed(1) : '-'}%`, '-%');
-                        updateDetailStat('.detail-calc-speed', `${driverState?.lastDisplayedSpeed !== undefined ? driverState.lastDisplayedSpeed.toFixed(1) : '-'}`, '-');
-                        updateDetailStat('.detail-calc-accel', `${driverState?.lastDisplayedAcceleration !== undefined ? driverState.lastDisplayedAcceleration.toFixed(3) : '-'}`, '-');
-
-                        const estLapTimeEl = detailsDiv.querySelector('.detail-est-lap-time');
-                        const estLapParaEl = detailsDiv.querySelector('.p-est-lap-time');
-                        if (estLapTimeEl && estLapParaEl) {
-                            const isRacing = driverData.statusClass === 'racing';
-                            const estLapVisible =
-                                isRacing &&
-                                Config.get('showLapEstimate') &&
-                                driverState?.smoothedLapEstimate !== null &&
-                                isFinite(driverState?.smoothedLapEstimate) &&
-                                State.trackInfo.id &&
-                                driverState?.smoothedLapEstimate > 0;
-
-                            if (estLapVisible) {
-                                estLapTimeEl.textContent = `${Utils.formatTime(driverState.smoothedLapEstimate)} (Raw: ${driverState.rawLapEstimate !== null && isFinite(driverState.rawLapEstimate) ? Utils.formatTime(driverState.rawLapEstimate) : '--:--'})`;
-                                estLapParaEl.style.display = '';
-                            } else {
-                                estLapTimeEl.textContent = 'N/A';
-                                estLapParaEl.style.display = 'none';
-                            }
-                        }
-                    }
-
-                    if (Config.get('fetchApiStatsOnClick') && driverId && !element.hasAttribute('data-stats-loaded') && !APIManager.isFetching.has(driverId)) {
-                        const statsContainer = detailsDiv.querySelector('.api-stats-container');
-                        if (statsContainer && !statsContainer.matches('.loading, .loaded, .error, .no-key')) {
-                            setTimeout(() => APIManager.fetchAndDisplayRacingStats(element, driverId), 50);
-                        }
-                    }
-                    this.hideUnavailableMetricCards(detailsDiv);
-                }
-            }
-
             if (driverState) driverState.statusClass = driverData.statusClass;
         },
         stableUpdateCustomList() {
             if (!Config.get('hideOriginalList')) {
+                if (DriverInspector.root) DriverInspector.close(false);
                 if (State.isInitialized) {
                     State.resetRaceState();
                 }
@@ -681,6 +482,7 @@
                 if (allDriversFinished && !State.raceFinished) {
                     State.raceFinished = true;
                     State.finalRaceData = newDriversData;
+                    if (typeof TabWorkspace !== 'undefined') TabWorkspace.invalidateRaceBoundViews();
                     UI.updateControlButtonsVisibility();
                 } else if (allDriversFinished) {
                     // Torn can populate image titles after the result rows first render.
@@ -693,6 +495,7 @@
                 }
 
                 this.syncMapSelection();
+                if (DriverInspector.root) DriverInspector.render();
 
                 if (hadFocus && document.body.contains(State.customUIContainer)) {
                     State.customUIContainer.scrollTop = savedScrollTop;

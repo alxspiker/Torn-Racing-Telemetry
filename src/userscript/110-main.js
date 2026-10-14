@@ -1,6 +1,20 @@
-    function toggleDetails(event) { const driverItem = event.target.closest('.custom-driver-item'); if (!driverItem || State.isUpdating) return; const detailsToggle = event.target.closest('.driver-details-toggle'); if (!detailsToggle) { if (!event.target.closest('.driver-details') && event.target.tagName !== 'A') RaceManager.selectDriverOnMap(driverItem.dataset.originalId); return; } const driverId = driverItem.dataset.userId; const isOpening = !driverItem.classList.contains('details-visible'); driverItem.classList.toggle('details-visible'); const position = Array.from(driverItem.parentNode.children).indexOf(driverItem) + 1; const driverData = RaceManager.parseDriverData(document.getElementById(driverItem.dataset.originalId)); if (driverData) { RaceManager.updateDriverElement(driverItem, driverData, position); } if (isOpening && Config.get('fetchApiStatsOnClick') && driverId && !driverItem.hasAttribute('data-stats-loaded') && !APIManager.isFetching.has(driverId)) { setTimeout(() => APIManager.fetchAndDisplayRacingStats(driverItem, driverId), 50); } }
+    function toggleDetails(event) {
+        const driverItem = event.target.closest('.custom-driver-item');
+        if (!driverItem || State.isUpdating) return;
+        if (event.target.closest('.driver-details-toggle')) {
+            event.preventDefault();
+            event.stopPropagation();
+            DriverInspector.open(driverItem.dataset.userId, driverItem.dataset.originalId, event.target.closest('button'));
+            return;
+        }
+        if (!event.target.closest('a')) RaceManager.selectDriverOnMap(driverItem.dataset.originalId);
+    }
 
     function cleanupScriptState(reason = "Unknown") {
+        LiveMapIntegration.disconnect();
+        RaceInfoIntegration.disconnect();
+        DriverInspector.close(false);
+        TabWorkspace.disconnect();
         if (State.observers.length > 0) { State.observers.forEach(obs => obs.disconnect()); State.observers = []; }
         document.querySelectorAll('.driver-telemetry-display').forEach(el => {
             if (el._animationRAF) cancelAnimationFrame(el._animationRAF);
@@ -15,23 +29,6 @@
         State.clearPopupsAndFullReset();
         State.isRaceViewActive = false;
         document.body.classList.remove('hide-original-leaderboard', 'telemetry-hidden');
-    }
-
-    async function purgeHistoryStorageIfNeeded() {
-        if (State.historyStoragePurged) {
-            return;
-        }
-        State.historyStoragePurged = true;
-
-        try {
-            GM_deleteValue('racingHistoryLog_v3.1.0');
-        } catch (e) { }
-
-        if (typeof HistoryStore !== 'undefined' && HistoryStore?.isSupported?.()) {
-            try {
-                await HistoryStore.clearEntries();
-            } catch (e) { }
-        }
     }
 
     async function initialize() {
@@ -65,7 +62,6 @@
                 Config.set('apiKey', '###PDA-APIKEY###');
                 Utils.showNotification('Torn PDA API key automatically configured.', 'success');
             }
-            await purgeHistoryStorageIfNeeded();
 
             State.originalLeaderboard = document.getElementById('leaderBoard');
             const originalScrollbarContainer = document.getElementById('drivers-scrollbar');
@@ -88,9 +84,20 @@
                 if (State.customUIContainer) { State.customUIContainer.removeEventListener('click', toggleDetails); }
                 else { State.customUIContainer = document.createElement('div'); State.customUIContainer.id = 'custom-driver-list-container'; parentContainer.insertBefore(State.customUIContainer, originalScrollbarContainer); }
                 State.customUIContainer.addEventListener('click', toggleDetails);
+                State.customUIContainer.addEventListener('keydown', event => {
+                    if (event.key !== 'Enter' && event.key !== ' ') return;
+                    if (event.target.closest('button, a')) return;
+                    const item = event.target.closest('.custom-driver-item');
+                    if (!item) return;
+                    event.preventDefault();
+                    RaceManager.selectDriverOnMap(item.dataset.originalId);
+                });
             }
 
             UI.initializeControls();
+            RaceInfoIntegration.install();
+            LiveMapIntegration.install();
+            TabWorkspace.install();
             State.currentRaceId = RaceManager.getRaceId();
             await RaceManager.updateTrackAndClassInfo();
             document.body.classList.toggle('hide-original-leaderboard', Config.get('hideOriginalList'));

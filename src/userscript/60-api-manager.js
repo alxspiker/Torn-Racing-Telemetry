@@ -1,5 +1,4 @@
     const APIManager = {
-        isFetching: new Set(),
         createApiError(responseLike, errorPayload = null) {
             let errorMessage = responseLike?.status
                 ? `API Error (${responseLike.status}): ${responseLike.statusText || 'Request failed'}`
@@ -19,20 +18,19 @@
             return error;
         },
         async parseJsonResponse(response) {
-            let data = null;
-
+            let data;
             try {
                 data = await response.json();
-            } catch (e) { }
-
-            if (!response.ok) {
-                throw this.createApiError(response, data);
+            } catch (cause) {
+                if (!response.ok) throw this.createApiError(response);
+                throw new Error('Torn API returned invalid JSON.', { cause });
             }
-            if (data?.error) {
-                throw this.createApiError(response, data.error);
+            if (!response.ok) throw this.createApiError(response, data);
+            if (data?.error) throw this.createApiError(response, data.error);
+            if (!data || typeof data !== 'object' || Array.isArray(data)) {
+                throw new Error('Torn API returned an invalid response: expected a JSON object.');
             }
-
-            return data ?? {};
+            return data;
         },
         shouldRetryRequest(error, attempt, retries) {
             if (attempt >= retries - 1) {
@@ -52,7 +50,10 @@
         normalizeApiUrl(urlLike, base = 'https://api.torn.com') {
             if (!urlLike || typeof urlLike !== 'string') return null;
             try {
-                return new URL(urlLike, base).toString();
+                const url = new URL(urlLike, base);
+                // Never forward a user's API key to a host supplied in pagination metadata.
+                if (url.protocol !== 'https:' || url.hostname !== 'api.torn.com' || url.port || !url.pathname.startsWith('/v2/')) return null;
+                return url.toString();
             } catch (e) {
                 return null;
             }
@@ -82,69 +83,6 @@
             }
 
             throw new Error('Max retries reached');
-        },
-        async fetchAndDisplayRacingStats(driverItem, userId) {
-            const detailsDiv = driverItem.querySelector('.driver-details');
-            const statsContainer = detailsDiv?.querySelector('.api-stats-container');
-            if (!statsContainer || !userId || this.isFetching.has(userId)) return;
-            const hideUnavailableApiCards = () => {
-                statsContainer.querySelectorAll('.driver-api-item').forEach(card => {
-                    const value = card.querySelector('.driver-api-value')?.textContent.trim() || '';
-                    card.style.display = value.includes('N/A') || value === '-' ? 'none' : '';
-                });
-            };
-
-            if (!Utils.isApiKeyAvailable()) {
-                statsContainer.classList.add('no-key');
-                statsContainer.querySelector('.api-stat-error-msg').textContent = 'API key not configured in settings.';
-                statsContainer.querySelectorAll('.api-stat').forEach(span => span.textContent = 'N/A');
-                hideUnavailableApiCards();
-                driverItem.dataset.statsLoaded = 'true';
-                return;
-            }
-
-            const apiKey = Config.get('apiKey');
-            this.isFetching.add(userId);
-            statsContainer.classList.remove('error', 'loaded', 'no-key');
-            statsContainer.classList.add('loading');
-            statsContainer.querySelector('.api-stat-error-msg').textContent = '';
-            statsContainer.querySelectorAll('.api-stat').forEach(span => span.textContent = '...');
-            const apiUrl = `https://api.torn.com/v2/user?selections=personalstats&id=${encodeURIComponent(userId)}&cat=racing`;
-            try {
-                const data = await this.fetchWithAuthHeader(apiUrl, apiKey);
-                const racingStats = data?.personalstats?.racing;
-
-                if (racingStats && typeof racingStats === 'object') {
-                    const skill = racingStats.skill?.toLocaleString() ?? 'N/A';
-                    statsContainer.querySelector('.stat-skill').textContent = skill;
-                    statsContainer.querySelector('.stat-points').textContent = racingStats.points?.toLocaleString() ?? 'N/A';
-                    const racesEntered = racingStats.races?.entered;
-                    const racesWon = racingStats.races?.won;
-                    statsContainer.querySelector('.stat-races-entered').textContent = racesEntered?.toLocaleString() ?? 'N/A';
-                    statsContainer.querySelector('.stat-races-won').textContent = racesWon?.toLocaleString() ?? 'N/A';
-                    const winRate = (racesEntered && racesWon > 0) ? ((racesWon / racesEntered) * 100).toFixed(1) + '%' : (racesEntered > 0 ? '0.0%' : 'N/A');
-                    statsContainer.querySelector('.stat-win-rate').textContent = winRate;
-                    statsContainer.classList.add('loaded');
-                    hideUnavailableApiCards();
-                    driverItem.dataset.statsLoaded = 'true';
-                } else {
-                    statsContainer.classList.add('error');
-                    statsContainer.querySelector('.api-stat-error-msg').textContent = 'No racing stats found (or permission denied).';
-                    statsContainer.querySelectorAll('.api-stat').forEach(span => span.textContent = 'N/A');
-                    hideUnavailableApiCards();
-                    driverItem.dataset.statsLoaded = 'true';
-                }
-            } catch (error) {
-                statsContainer.classList.add('error');
-                statsContainer.querySelector('.api-stat-error-msg').textContent = `Error: ${error.message}`;
-                statsContainer.querySelectorAll('.api-stat').forEach(span => span.textContent = '-');
-                hideUnavailableApiCards();
-                delete driverItem.dataset.statsLoaded;
-                Utils.showNotification(error.message, 'error');
-            } finally {
-                statsContainer.classList.remove('loading');
-                this.isFetching.delete(userId);
-            }
         },
         async fetchTrackData(apiKey) {
             const cached = GM_getValue('tornTrackCache', null);
@@ -184,13 +122,18 @@
                     break;
                 }
 
-                allRaces.push(...pageRaces);
-                if (allRaces.length >= boundedLimit) {
-                    break;
+                const knownRaceIds = new Set(allRaces.map(race => String(race.id)));
+                for (const race of pageRaces) {
+                    const id = String(race.id);
+                    if (knownRaceIds.has(id)) continue;
+                    allRaces.push(race);
+                    knownRaceIds.add(id);
                 }
+                if (allRaces.length >= boundedLimit) break;
 
-                const metadataLinks = data?._metadata?.links || {};
-                nextUrl = this.normalizeApiUrl(metadataLinks.next) || this.normalizeApiUrl(metadataLinks.prev);
+                // The previous-page link is not a forward-pagination fallback.
+                nextUrl = this.normalizeApiUrl(data?._metadata?.links?.next);
+                if (!nextUrl || pageRaces.every(race => !race?.id)) break;
             }
 
             return allRaces.slice(0, boundedLimit);
@@ -259,7 +202,7 @@
                 try {
                     const races = await APIManager.fetchHistoricalRaceData(Config.get('apiKey'), State.userId, 10);
                     const race = races.find(entry => String(entry.id) === key);
-                    const gain = Number(race?.skill_gain);
+                    const gain = race?.skill_gain == null ? NaN : Number(race.skill_gain);
                     if (Number.isFinite(gain)) {
                         this.skillGainCache.set(key, gain);
                         return gain;
@@ -356,11 +299,11 @@
                 results.set(userId, {
                     ...existing,
                     userId,
-                    position: Number.isFinite(apiResult.position) ? apiResult.position : existing.position,
+                    position: Number.isFinite(Number(apiResult.position)) && apiResult.position != null ? Number(apiResult.position) : existing.position,
                     crashed,
-                    raceTime: Number.isFinite(raceTime) ? raceTime : existing.raceTime,
-                    bestLap: !crashed && Number.isFinite(bestLap) ? bestLap : existing.bestLap ?? null,
-                    displayTime: existing.displayTime || (Number.isFinite(raceTime) ? Utils.formatTime(raceTime, true) : null)
+                    raceTime: apiResult.race_time != null && Number.isFinite(raceTime) ? raceTime : existing.raceTime,
+                    bestLap: !crashed && apiResult.best_lap_time != null && Number.isFinite(bestLap) ? bestLap : existing.bestLap ?? null,
+                    displayTime: existing.displayTime || (apiResult.race_time != null && Number.isFinite(raceTime) ? Utils.formatTime(raceTime, true) : null)
                 });
             });
         },
@@ -388,6 +331,7 @@
 
         buildResults(payload) {
             const intervalsPerLap = payload.raceData.trackData.intervals.length;
+            if (!intervalsPerLap) return new Map();
             const results = [];
             const crashes = [];
             Object.entries(payload.raceData.cars).forEach(([playerName, encodedIntervals]) => {
@@ -429,7 +373,9 @@
             if (missingIds.length) Utils.showNotification(`Loading racing skill for ${missingIds.length} racer${missingIds.length === 1 ? '' : 's'}…`);
             for (let index = 0; index < missingIds.length; index++) {
                 const userId = missingIds[index];
-                const skill = await this.fetchSkill(userId);
+                let skill = null;
+                try { skill = await this.fetchSkill(userId); }
+                catch (error) { console.warn('Telemetry Script: racing skill unavailable for a driver:', error.message); }
                 if (Number.isFinite(skill)) {
                     skills.set(userId, skill);
                     this.saveSkill(userId, skill);

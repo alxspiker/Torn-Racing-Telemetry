@@ -7,7 +7,6 @@
         trackNameMap: null, carBaseStatsMap: null, currentRaceClass: null,
         isInitialized: false, isRaceViewActive: false, raceFinished: false, currentRaceId: null,
         controlsContainer: null,
-        historyStoragePurged: false,
         finalRaceData: [],
         mapSelectionInitializedForRace: null,
 
@@ -20,15 +19,11 @@
             });
 
             this.previousMetrics = {};
-            document.querySelectorAll('.custom-driver-item[data-stats-loaded]').forEach(el => {
-                el.removeAttribute('data-stats-loaded');
-                el.querySelectorAll('.api-stat').forEach(span => span.textContent = '...');
-                el.querySelector('.api-stats-container')?.classList.remove('error', 'loaded', 'no-key');
-            });
             this.raceFinished = false;
             this.finalRaceData = [];
             this.currentRaceId = null;
             this.mapSelectionInitializedForRace = null;
+            if (typeof TabWorkspace !== 'undefined') TabWorkspace.invalidateRaceBoundViews();
             UI.updateControlButtonsVisibility();
         },
         clearPopupsAndFullReset() {

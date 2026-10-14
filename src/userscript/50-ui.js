@@ -1,4 +1,47 @@
     const UI = {
+        // One accessible, small-screen-first navigation system across all telemetry panels.
+        // Sections are real DOM nodes: existing controls, sortable tables and listeners survive tab switches.
+        buildPanelSections(sections, defaultKey) {
+            const root = Utils.createElement('div', { className: 'rtt-panel-workspace' });
+            const nav = Utils.createElement('div', { className: 'rtt-panel-navigation' });
+            nav.setAttribute('role', 'tablist');
+            const body = Utils.createElement('div', { className: 'rtt-panel-viewports' });
+            const entries = [];
+            for (const section of sections) {
+                const tab = Utils.createElement('button', { className: 'rtt-panel-nav-button', text: section.title });
+                tab.type = 'button';
+                tab.id = `rtt-tab-${section.key}-${this.panelNonce = (this.panelNonce || 0) + 1}`;
+                tab.setAttribute('role', 'tab');
+                tab.dataset.section = section.key;
+                const viewport = Utils.createElement('section', { className: 'rtt-panel-section' });
+                viewport.setAttribute('role', 'tabpanel');
+                viewport.setAttribute('aria-labelledby', tab.id);
+                viewport.append(section.content);
+                tab.addEventListener('click', () => activate(section.key));
+                tab.addEventListener('keydown', event => {
+                    if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
+                    event.preventDefault();
+                    const index = entries.findIndex(entry => entry.key === section.key);
+                    const next = entries[(index + (event.key === 'ArrowRight' ? 1 : -1) + entries.length) % entries.length];
+                    activate(next.key);
+                    next.tab.focus();
+                });
+                entries.push({ key: section.key, tab, viewport });
+                nav.append(tab);
+                body.append(viewport);
+            }
+            function activate(key) {
+                for (const entry of entries) {
+                    const active = entry.key === key;
+                    entry.tab.setAttribute('aria-selected', String(active));
+                    entry.tab.tabIndex = active ? 0 : -1;
+                    entry.viewport.hidden = !active;
+                }
+            }
+            activate(defaultKey || sections[0]?.key);
+            root.append(nav, body);
+            return root;
+        },
         createSettingsPopup() {
             if (State.settingsPopupInstance) State.settingsPopupInstance.remove();
 
@@ -130,7 +173,7 @@
             const settingsButtons = Utils.createElement('div', { className: 'settings-buttons' });
             settingsButtons.append(
                 Utils.createElement('button', { className: 'settings-btn toggle-telemetry-btn', text: 'Toggle Telemetry' }),
-                Utils.createElement('button', { className: 'settings-btn primary', attrs: { id: 'saveSettings' }, text: 'Save & Close' })
+                Utils.createElement('button', { className: 'settings-btn primary', attrs: { id: 'saveSettings' }, text: 'Save' })
             );
             settingsContent.appendChild(settingsButtons);
 
@@ -141,7 +184,28 @@
             );
             settingsContent.appendChild(dataButtons);
 
-            content.append(titleRow, settingsContent);
+            // Group existing settings rather than duplicating inputs or their event listeners.
+            const settingsTabs = [
+                { key: 'display', title: 'Display', ids: ['historyEnabled', 'statsPanelEnabled', 'hideOriginalList', 'telemetryShowSpeed', 'speedUnit', 'colorCode', 'animateChanges', 'showLapEstimate'] },
+                { key: 'tuning', title: 'Tuning', ids: ['speedSmoothingFactor', 'maxAnimationDurationMs', 'lapEstimateSmoothingFactor'] },
+                { key: 'data', title: 'API & Data', ids: ['fetchApiStatsOnClick', 'apiKey', 'historicalRaceLimit'] }
+            ];
+            const groups = settingsTabs.map(spec => ({
+                key: spec.key, title: spec.title,
+                content: Utils.createElement('div', { className: 'rtt-settings-group' })
+            }));
+            for (const section of settingsTabs) {
+                for (const id of section.ids) {
+                    const control = settingsContent.querySelector(`#${id}`);
+                    const item = control?.closest('.settings-item');
+                    if (item) groups.find(group => group.key === section.key).content.append(item);
+                }
+            }
+            const dataGroup = groups.find(group => group.key === 'data');
+            dataGroup.content.append(tosContainer, dataButtons);
+            settingsContent.replaceChildren(this.buildPanelSections(groups, 'display'));
+            settingsButtons.classList.add('rtt-panel-footer-actions');
+            content.append(titleRow, settingsContent, settingsButtons);
 
             content.querySelector('#historyEnabled').checked = Config.get('historyEnabled');
             content.querySelector('#statsPanelEnabled').checked = Config.get('statsPanelEnabled');
@@ -172,11 +236,11 @@
 
             const closePopup = () => {
                 popup.remove();
-                State.settingsPopupInstance = null;
+                if (State.settingsPopupInstance === popup) State.settingsPopupInstance = null;
             };
 
             content.querySelector('.settings-close').addEventListener('click', closePopup);
-            popup.addEventListener('click', e => { if (e.target === popup) closePopup(); });
+            popup.addEventListener('click', e => { if (e.target === popup && !popup.classList.contains('rtt-inline-tab-content')) closePopup(); });
             content.querySelector('.toggle-telemetry-btn').addEventListener('click', e => {
                 const newState = !Config.get('telemetryVisible');
                 Config.set('telemetryVisible', newState);
@@ -194,62 +258,53 @@
             });
 
             content.querySelector('#saveSettings').addEventListener('click', async () => {
-                const selectedOptions = [];
-
-                if (content.querySelector('#telemetryShowSpeed').checked) selectedOptions.push('speed');
-                if (content.querySelector('#telemetryShowAcceleration').checked) selectedOptions.push('acceleration');
-                if (content.querySelector('#telemetryShowProgress').checked) selectedOptions.push('progress');
-                Config.set('telemetryDisplayOptions', selectedOptions);
-
-                Config.set('historyEnabled', content.querySelector('#historyEnabled').checked);
-                Config.set('statsPanelEnabled', content.querySelector('#statsPanelEnabled').checked);
-                Config.set('speedUnit', content.querySelector('#speedUnit').value);
-                Config.set('colorCode', content.querySelector('#colorCode').checked);
-                Config.set('animateChanges', content.querySelector('#animateChanges').checked);
-
-                let speedSmooth = parseFloat(content.querySelector('#speedSmoothingFactor').value);
-                if (isNaN(speedSmooth) || speedSmooth < 0.1 || speedSmooth > 0.9) {
-                    speedSmooth = Config.defaults.speedSmoothingFactor;
-                    content.querySelector('#speedSmoothingFactor').value = speedSmooth;
-                    Utils.showNotification('Invalid Speed Smoothing Factor, reset to default.', 'error');
+                // Validate every field before writing any settings.
+                const numericFields = [
+                    ['speedSmoothingFactor', 'Speed smoothing factor', 0.1, 0.9, false],
+                    ['maxAnimationDurationMs', 'Max animation duration', 100, 3000, true],
+                    ['lapEstimateSmoothingFactor', 'Lap estimate smoothing', 0.01, 1, false],
+                    ['historicalRaceLimit', 'Race limit', 10, 1000, true]
+                ];
+                const values = {};
+                for (const [id, label, min, max, integer] of numericFields) {
+                    const input = content.querySelector(`#${id}`);
+                    const raw = input.value.trim();
+                    const value = Number(raw);
+                    if (!raw || !Number.isFinite(value) || value < min || value > max || (integer && !Number.isInteger(value))) {
+                        Utils.showNotification(`${label} must be ${integer ? 'a whole number' : 'a number'} between ${min} and ${max}.`, 'error');
+                        input.focus();
+                        return;
+                    }
+                    values[id] = value;
                 }
-                Config.set('speedSmoothingFactor', speedSmooth);
-
-                let animDuration = parseInt(content.querySelector('#maxAnimationDurationMs').value, 10);
-                if (isNaN(animDuration) || animDuration < 100 || animDuration > 3000) {
-                    animDuration = Config.defaults.maxAnimationDurationMs;
-                    content.querySelector('#maxAnimationDurationMs').value = animDuration;
-                    Utils.showNotification('Invalid Max Animation Duration, reset to default.', 'error');
+                const apiKeyInput = content.querySelector('#apiKey');
+                const apiKey = apiKeyInput.value.trim();
+                if (apiKey && apiKey.length < 16 && apiKey !== '###PDA-APIKEY###') {
+                    Utils.showNotification('API key seems too short. Settings were not saved.', 'error');
+                    apiKeyInput.focus();
+                    return;
                 }
-                Config.set('maxAnimationDurationMs', animDuration);
-
-                Config.set('showLapEstimate', content.querySelector('#showLapEstimate').checked);
-                Config.set('fetchApiStatsOnClick', content.querySelector('#fetchApiStatsOnClick').checked);
-
-                const apiKeyInputFromUser = content.querySelector('#apiKey').value.trim();
-                if (apiKeyInputFromUser.length > 0 && apiKeyInputFromUser.length < 16 && apiKeyInputFromUser !== '###PDA-APIKEY###') {
-                    Utils.showNotification('API Key seems too short.', 'error');
-                } else {
-                    Config.set('apiKey', apiKeyInputFromUser);
+                const speedUnit = content.querySelector('#speedUnit').value;
+                if (!['mph', 'kmh'].includes(speedUnit)) {
+                    Utils.showNotification('Choose mph or km/h. Settings were not saved.', 'error');
+                    content.querySelector('#speedUnit').focus();
+                    return;
                 }
-
-                let lapSmoothFactor = parseFloat(content.querySelector('#lapEstimateSmoothingFactor').value);
-                if (isNaN(lapSmoothFactor) || lapSmoothFactor < 0.01 || lapSmoothFactor > 1.0) {
-                    lapSmoothFactor = Config.defaults.lapEstimateSmoothingFactor;
-                    content.querySelector('#lapEstimateSmoothingFactor').value = lapSmoothFactor;
-                    Utils.showNotification('Invalid Lap Est. Smoothing Factor, reset to default.', 'error');
+                values.telemetryDisplayOptions = [
+                    ['telemetryShowSpeed', 'speed'],
+                    ['telemetryShowAcceleration', 'acceleration'],
+                    ['telemetryShowProgress', 'progress']
+                ].filter(([id]) => content.querySelector(`#${id}`).checked).map(([, option]) => option);
+                for (const id of ['historyEnabled', 'statsPanelEnabled', 'colorCode', 'animateChanges', 'showLapEstimate', 'fetchApiStatsOnClick']) {
+                    values[id] = content.querySelector(`#${id}`).checked;
                 }
-                Config.set('lapEstimateSmoothingFactor', lapSmoothFactor);
-
-                let raceLimit = parseInt(content.querySelector('#historicalRaceLimit').value, 10);
-                if (isNaN(raceLimit) || raceLimit < 10 || raceLimit > 1000) {
-                    raceLimit = Config.defaults.historicalRaceLimit;
-                    content.querySelector('#historicalRaceLimit').value = raceLimit;
-                    Utils.showNotification('Invalid Race Limit, reset to default.', 'error');
-                }
-                Config.set('historicalRaceLimit', raceLimit);
+                values.speedUnit = speedUnit;
+                values.apiKey = apiKey;
+                for (const [key, value] of Object.entries(values)) Config.set(key, value);
+                if (typeof TabWorkspace !== 'undefined') TabWorkspace.invalidateRaceBoundViews();
                 Utils.showNotification('Settings saved!', 'success');
                 closePopup();
+                if (typeof TabWorkspace !== 'undefined') TabWorkspace.restoreAfterAction('settings');
                 UI.updateControlButtonsVisibility();
 
                 RaceManager.stableUpdateCustomList();
@@ -260,6 +315,7 @@
                     await Config.clearData();
                     Utils.showNotification('Script data cleared!', 'success');
                     closePopup();
+                    if (typeof TabWorkspace !== 'undefined') TabWorkspace.restoreAfterAction('settings');
                     UI.updateControlButtonsVisibility();
                     RaceManager.stableUpdateCustomList();
                 }
@@ -309,7 +365,7 @@
             const crashes = races.filter(entry => entry.crashed).length;
             const wins = finished.filter(entry => entry.position === 1).length;
             const avgPosition = finished.length ? (finished.reduce((sum, entry) => sum + entry.position, 0) / finished.length) : null;
-            const winRate = finished.length ? (wins / finished.length) * 100 : null;
+            const winRate = races.length ? (wins / races.length) * 100 : null;
             const crashRate = races.length ? (crashes / races.length) * 100 : null;
             const bestLapValues = races.map(entry => entry.bestLap).filter(value => Number.isFinite(value));
             const avgBestLap = bestLapValues.length
@@ -481,11 +537,11 @@
 
             const closePanel = () => {
                 popup.remove();
-                State.advancedStatsPanelInstance = null;
+                if (State.advancedStatsPanelInstance === popup) State.advancedStatsPanelInstance = null;
             };
 
             content.querySelector('.stats-close').addEventListener('click', closePanel);
-            popup.addEventListener('click', e => { if (e.target === popup) closePanel(); });
+            popup.addEventListener('click', e => { if (e.target === popup && !popup.classList.contains('rtt-inline-tab-content')) closePanel(); });
             popup.appendChild(content);
             document.body.appendChild(popup);
             State.advancedStatsPanelInstance = popup;
@@ -596,12 +652,10 @@
                 if (errorMessages.length > 0) {
                     finalFragment.appendChild(this.createIssueBanner(errorMessages));
                 }
-                if (historicalStatsContent) {
-                    finalFragment.appendChild(historicalStatsContent);
-                }
-                if (trackAnalysisContent) {
-                    finalFragment.appendChild(trackAnalysisContent);
-                }
+                finalFragment.appendChild(this.buildPanelSections([
+                    { key: 'performance', title: 'Performance', content: historicalStatsContent || this.createPanelMessage('info-msg', 'No historical statistics available.') },
+                    { key: 'track', title: 'Track & Car', content: trackAnalysisContent || this.createPanelMessage('info-msg', 'No track analysis available.') }
+                ], 'performance'));
                 if (State.advancedStatsPanelInstance !== popup || !document.body.contains(popup)) {
                     return;
                 }
@@ -871,7 +925,7 @@
             if (currentUserCar && currentUserCar.stats) {
                 const carNameParagraph = document.createElement('p');
                 carNameParagraph.appendChild(Utils.createElement('strong', { text: currentUserCar.name }));
-                carNameParagraph.append(` (ID: ${currentUserCar.id})`);
+                if (Number.isInteger(currentUserCar.id)) carNameParagraph.append(` · Item #${currentUserCar.id}`);
                 fragment.appendChild(carNameParagraph);
 
                 const statOrder = ['Top Speed', 'Acceleration', 'Handling', 'Braking', 'Dirt', 'Tarmac', 'Safety'];
@@ -884,7 +938,8 @@
             } else if (currentUserCar) {
                 const fallbackParagraph = document.createElement('p');
                 fallbackParagraph.appendChild(Utils.createElement('strong', { text: currentUserCar.name }));
-                fallbackParagraph.append(` (ID: ${currentUserCar.id}) - `);
+                if (Number.isInteger(currentUserCar.id)) fallbackParagraph.append(` · Item #${currentUserCar.id}`);
+                fallbackParagraph.append(' — ');
                 fallbackParagraph.appendChild(Utils.createElement('i', { text: 'Stats could not be parsed.' }));
                 fragment.appendChild(fallbackParagraph);
             } else {
@@ -975,13 +1030,16 @@
 
             try {
                 const nameEl = carDiv.querySelector('.model p:first-child');
-                const imgEl = carDiv.querySelector('.model .img img.torn-item');
+                const imgEl = carDiv.querySelector('.model .img img.torn-item, .model .img img, .model-wrap img');
                 const name = nameEl ? nameEl.textContent.trim() : 'Unknown Car';
                 let id = null;
 
-                if (imgEl && imgEl.src) {
-                    const idMatch = imgEl.src.match(/\/items\/(\d+)\//);
-                    if (idMatch) id = parseInt(idMatch[1], 10);
+                const fallbackImg = document.querySelector('#leaderBoard li.selected .car img')
+                    || [...document.querySelectorAll('#leaderBoard li .car img')].find(img => img.title === name);
+                for (const image of [imgEl, fallbackImg]) {
+                    const src = image?.getAttribute('src') || image?.src || '';
+                    const idMatch = src.match(/\/(?:items)\/(\d+)(?:\/|$)/);
+                    if (idMatch) { id = Number(idMatch[1]); break; }
                 }
 
                 const stats = {};
@@ -1017,14 +1075,15 @@
             const userResult = race.results.find(result => String(result.driver_id) === String(userId));
             if (!userResult) return null;
 
-            const endTimestampSec = userResult.time_ended ?? race.schedule?.end ?? race.schedule?.start ?? null;
-            const endTimestampMs = Number.isFinite(endTimestampSec) ? endTimestampSec * 1000 : Date.now();
-            const position = Number.isFinite(userResult.position) ? userResult.position : null;
+            const numberOrNull = value => value == null || value === '' || !Number.isFinite(Number(value)) ? null : Number(value);
+            const endTimestampSec = numberOrNull(userResult.time_ended ?? race.schedule?.end ?? race.schedule?.start);
+            const endTimestampMs = endTimestampSec !== null && endTimestampSec > 0 ? endTimestampSec * 1000 : null;
+            const position = numberOrNull(userResult.position);
             const crashed = userResult.has_crashed === true;
-            const raceTime = Number.isFinite(userResult.race_time) ? userResult.race_time : null;
-            const bestLap = Number.isFinite(userResult.best_lap_time) ? userResult.best_lap_time : null;
+            const raceTime = numberOrNull(userResult.race_time);
+            const bestLap = numberOrNull(userResult.best_lap_time);
             const participants = race.participants?.current ?? race.results.length ?? null;
-            const skillGain = Number.isFinite(race.skill_gain) ? race.skill_gain : null;
+            const skillGain = numberOrNull(race.skill_gain);
             const trackName = State.trackNameMap?.[race.track_id] || `Track ${race.track_id ?? '?'}`;
 
             let resultLabel = 'Unknown';
@@ -1263,10 +1322,10 @@
 
             const closePanel = () => {
                 popup.remove();
-                State.historyPanelInstance = null;
+                if (State.historyPanelInstance === popup) State.historyPanelInstance = null;
             };
             content.querySelector('.history-close').addEventListener('click', closePanel);
-            popup.addEventListener('click', e => { if (e.target === popup) closePanel(); });
+            popup.addEventListener('click', e => { if (e.target === popup && !popup.classList.contains('rtt-inline-tab-content')) closePanel(); });
 
             popup.appendChild(content);
             document.body.appendChild(popup);
@@ -1298,9 +1357,13 @@
                 historyFragment.appendChild(this.createPanelMessage('info-msg', 'Configure an API key to load race timeline and recent-races table.'));
             }
 
-            historyFragment.appendChild(this.createHistoryDeltaCards(raceEntries));
-            historyFragment.appendChild(this.createHistoryRaceTimeline(raceEntries));
-            historyFragment.appendChild(this.createSortableHistoryRacesTable(raceEntries));
+            const historyOverview = document.createDocumentFragment();
+            historyOverview.append(this.createHistoryDeltaCards(raceEntries), this.createHistoryRaceTimeline(raceEntries));
+            const historyRaces = this.createSortableHistoryRacesTable(raceEntries);
+            historyFragment.appendChild(this.buildPanelSections([
+                { key: 'overview', title: 'Overview', content: historyOverview },
+                { key: 'races', title: 'All races', content: historyRaces }
+            ], 'overview'));
 
             if (State.historyPanelInstance !== popup || !document.body.contains(popup)) {
                 return;
@@ -1325,17 +1388,16 @@
                     <p><strong>Description:</strong> ${ScriptInfo.description}</p>
                     <h3>Contact & Support</h3>
                     <p>For suggestions, bug reports, or questions, please contact <a href="${ScriptInfo.contactUrl()}" target="_blank" rel="noopener noreferrer">${ScriptInfo.author} [${ScriptInfo.contactId}]</a> via Torn mail.</p>
-                    <h3>Important Notes</h3>
-                    <ul>${notesHTML}</ul>
+                    <details class="rtt-info-notes"><summary>Release notes &amp; technical details</summary><ul>${notesHTML}</ul></details>
                 </div>`;
 
             const closePanel = () => {
                 popup.remove();
-                State.infoPanelInstance = null;
+                if (State.infoPanelInstance === popup) State.infoPanelInstance = null;
             };
 
             content.querySelector('.info-close').addEventListener('click', closePanel);
-            popup.addEventListener('click', e => { if (e.target === popup) closePanel(); });
+            popup.addEventListener('click', e => { if (e.target === popup && !popup.classList.contains('rtt-inline-tab-content')) closePanel(); });
             popup.appendChild(content);
             document.body.appendChild(popup);
             State.infoPanelInstance = popup;
@@ -1371,11 +1433,11 @@
 
             const closePopup = () => {
                 popup.remove();
-                State.downloadPopupInstance = null;
+                if (State.downloadPopupInstance === popup) State.downloadPopupInstance = null;
             };
 
             content.querySelector('.download-close').addEventListener('click', closePopup);
-            popup.addEventListener('click', e => { if (e.target === popup) closePopup(); });
+            popup.addEventListener('click', e => { if (e.target === popup && !popup.classList.contains('rtt-inline-tab-content')) closePopup(); });
 
             const formatSelect = content.querySelector('#downloadFormat');
             const downloadBtn = content.querySelector('#downloadFileBtn');
@@ -1421,10 +1483,11 @@
                         DataExporter.downloadData(dataString, fileExt, mimeType);
                         Utils.showNotification('File download initiated.', 'success');
                     } else if (actionType === 'copy') {
-                        DataExporter.copyToClipboard(dataString);
+                        await DataExporter.copyToClipboard(dataString);
                         Utils.showNotification('Copied to clipboard!', 'success');
                     }
                     closePopup();
+                    if (typeof TabWorkspace !== 'undefined') TabWorkspace.restoreAfterAction('export');
                 } catch (e) {
                     Utils.showNotification(`Error preparing data: ${e.message}`, 'error');
                 }
@@ -1447,51 +1510,58 @@
             if (historyBtn) historyBtn.style.display = Config.get('historyEnabled') ? 'inline-block' : 'none';
             if (statsBtn) statsBtn.style.display = Config.get('statsPanelEnabled') ? 'inline-block' : 'none';
             if (downloadBtn) downloadBtn.style.display = State.raceFinished ? 'inline-block' : 'none';
+            if (typeof RaceInfoIntegration !== 'undefined') RaceInfoIntegration.sync();
+            if (typeof TabWorkspace !== 'undefined') TabWorkspace.refreshVisibility();
         },
         initializeControls() {
             if (!State.controlsContainer) return;
             State.controlsContainer.innerHTML = '';
 
+            const carButton = document.createElement('button');
+            carButton.className = 'telemetry-car-button';
+            carButton.textContent = 'Car';
+            carButton.title = 'View your current car and race actions';
+            carButton.type = 'button';
+            carButton.style.display = 'none';
+            carButton.addEventListener('click', () => { TabWorkspace.activate('car'); });
+            State.controlsContainer.appendChild(carButton);
+
             const infoButton = document.createElement('button');
             infoButton.className = 'telemetry-info-button';
-            infoButton.textContent = '\u2139\uFE0F Info';
+            infoButton.textContent = 'Info';
             infoButton.title = 'View Script Information';
-            infoButton.addEventListener('click', () => { this.createInfoPanel(); });
+            infoButton.addEventListener('click', () => { TabWorkspace.activate('info'); });
             State.controlsContainer.appendChild(infoButton);
 
             const historyButton = document.createElement('button');
             historyButton.className = 'telemetry-history-button';
-            historyButton.textContent = '\u{1F4DC} History';
+            historyButton.textContent = 'History';
             historyButton.title = 'View Your Racing Stats History';
             historyButton.style.display = 'none';
-            historyButton.addEventListener('click', () => { this.createHistoryPanel(); });
+            historyButton.addEventListener('click', () => { TabWorkspace.activate('history'); });
             State.controlsContainer.appendChild(historyButton);
 
             const statsButton = document.createElement('button');
             statsButton.className = 'telemetry-stats-button';
-            statsButton.textContent = '\u{1F4CA} Stats';
+            statsButton.textContent = 'Stats';
             statsButton.title = 'Open Advanced Race Statistics';
             statsButton.style.display = 'none';
-            statsButton.addEventListener('click', () => {
-                RaceManager.updateTrackAndClassInfo()
-                    .then(() => { this.createAdvancedStatsPanel(); })
-                    .catch(() => { Utils.showNotification('Error getting latest track/class info.', 'error'); });
-            });
+            statsButton.addEventListener('click', () => { TabWorkspace.activate('stats'); });
             State.controlsContainer.appendChild(statsButton);
 
             const downloadButton = document.createElement('button');
             downloadButton.className = 'telemetry-download-button';
-            downloadButton.textContent = '\u{1F4BE} Export';
+            downloadButton.textContent = 'Export';
             downloadButton.title = 'Export Race Results';
             downloadButton.style.display = 'none';
-            downloadButton.addEventListener('click', () => { this.createDownloadPopup(); });
+            downloadButton.addEventListener('click', () => { TabWorkspace.activate('export'); });
             State.controlsContainer.appendChild(downloadButton);
 
             const settingsButton = document.createElement('button');
             settingsButton.className = 'telemetry-settings-button';
-            settingsButton.textContent = '\u2699 Settings';
+            settingsButton.textContent = 'Settings';
             settingsButton.title = 'Open Telemetry & UI Settings';
-            settingsButton.addEventListener('click', () => { this.createSettingsPopup(); });
+            settingsButton.addEventListener('click', () => { TabWorkspace.activate('settings'); });
             State.controlsContainer.appendChild(settingsButton);
 
             this.updateControlButtonsVisibility();
