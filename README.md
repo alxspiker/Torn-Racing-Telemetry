@@ -2,8 +2,6 @@
 
 Live racing telemetry, driver details, race history, statistics and result exports for Torn.
 
-Version 4.0.0 is available on the `v4-testing` branch for testing. It has not been merged to `main` or published on GreasyFork.
-
 ## Racing interface
 
 Torn's live track stays above the telemetry tabs. **Drivers**, **Car**, **Info**, **History**, **Stats**, **Export** and **Settings** share the area beneath it. Switching tabs preserves editable form state.
@@ -18,15 +16,13 @@ Torn's live track stays above the telemetry tabs. **Drivers**, **Car**, **Info**
 
 Speed, acceleration and progress bars are enabled by default. Green indicates acceleration; red indicates braking. Waiting and finished drivers use their race status instead of fabricated live telemetry.
 
-## Installation and upgrades
+## Installation
 
-The published installation is available on [GreasyFork](https://greasyfork.org/en/scripts/522245-torn-racing-telemetry). Until 4.0.0 is published there, that page serves the previous release.
+1. Install a userscript manager, such as Tampermonkey or Violentmonkey, or use Torn PDA.
+2. Install [Torn Racing Telemetry from GreasyFork](https://greasyfork.org/en/scripts/522245-torn-racing-telemetry).
+3. Open Torn's racing page. Configure the display in **Settings** and add an API key for History, Stats and driver API details.
 
-For this test build, open the [raw userscript](https://raw.githubusercontent.com/alxspiker/Torn-Racing-Telemetry/v4-testing/tornracingtelemetry.user.js) in your userscript manager. `tornracingtelemetry.js` is the canonical bundle; the build also writes an identical `.user.js` installer.
-
-Version 4.0.0 restores the published name and namespace and keeps the existing configuration and API-key storage keys. It is intended to update the published installation. Disable or remove the separate **Torn Racing Telemetry (v4 Preview)** installation so both scripts do not run together. Preview settings are separate from the published installation's settings.
-
-The update and download URLs point to GreasyFork. Updating this repository alone does not publish a GreasyFork update.
+Keep only one Torn Racing Telemetry installation enabled.
 
 ## API and local data
 
@@ -74,9 +70,9 @@ Live screenshots supplied by TheProgrammer.
 
 ![Completed race export controls](imgs/export.jpg)
 
-## Development and verification
+## Development
 
-Edit `src/userscript/`, then rebuild the single distributed bundle:
+Edit `src/userscript/`, then build and check the userscript:
 
 ```sh
 npm run build
@@ -84,10 +80,8 @@ npm run check
 npm test
 ```
 
-No build dependencies are required beyond Node.js and npm. The build joins the numbered source files in order.
+Node.js and npm are required; there are no additional build dependencies. The build joins the numbered source files into `tornracingtelemetry.js` and writes an identical `tornracingtelemetry.user.js` installer.
 
-The current 40 automated tests cover bundle syntax and release metadata, telemetry timing, race-data parsing, pagination, exports, inline integrations, settings validation and API response errors. `tests/mock-race.html` is a synthetic fixture. These tests do not establish live Torn or Torn PDA compatibility; live verification of the release fixes remains pending. The screenshots show user-observed live views; they do not verify the new validation or API error handling.
-
-See [RELEASE_NOTES.md](RELEASE_NOTES.md) for 4.0.0 changes.
+The tests cover telemetry calculations, race-data parsing, pagination, exports, interface integration, settings validation and API errors. `tests/mock-race.html` provides a synthetic race fixture.
 
 Author: [TheProgrammer (2782979)](https://www.torn.com/profiles.php?XID=2782979).
