@@ -1520,7 +1520,7 @@
             const carButton = document.createElement('button');
             carButton.className = 'telemetry-car-button';
             carButton.textContent = 'Car';
-            carButton.title = 'View your current car and race actions';
+
             carButton.type = 'button';
             carButton.style.display = 'none';
             carButton.addEventListener('click', () => { TabWorkspace.activate('car'); });
@@ -1529,14 +1529,14 @@
             const infoButton = document.createElement('button');
             infoButton.className = 'telemetry-info-button';
             infoButton.textContent = 'Info';
-            infoButton.title = 'View Script Information';
+
             infoButton.addEventListener('click', () => { TabWorkspace.activate('info'); });
             State.controlsContainer.appendChild(infoButton);
 
             const historyButton = document.createElement('button');
             historyButton.className = 'telemetry-history-button';
             historyButton.textContent = 'History';
-            historyButton.title = 'View Your Racing Stats History';
+
             historyButton.style.display = 'none';
             historyButton.addEventListener('click', () => { TabWorkspace.activate('history'); });
             State.controlsContainer.appendChild(historyButton);
@@ -1544,7 +1544,7 @@
             const statsButton = document.createElement('button');
             statsButton.className = 'telemetry-stats-button';
             statsButton.textContent = 'Stats';
-            statsButton.title = 'Open Advanced Race Statistics';
+
             statsButton.style.display = 'none';
             statsButton.addEventListener('click', () => { TabWorkspace.activate('stats'); });
             State.controlsContainer.appendChild(statsButton);
@@ -1552,7 +1552,7 @@
             const downloadButton = document.createElement('button');
             downloadButton.className = 'telemetry-download-button';
             downloadButton.textContent = 'Export';
-            downloadButton.title = 'Export Race Results';
+
             downloadButton.style.display = 'none';
             downloadButton.addEventListener('click', () => { TabWorkspace.activate('export'); });
             State.controlsContainer.appendChild(downloadButton);
@@ -1560,7 +1560,7 @@
             const settingsButton = document.createElement('button');
             settingsButton.className = 'telemetry-settings-button';
             settingsButton.textContent = 'Settings';
-            settingsButton.title = 'Open Telemetry & UI Settings';
+
             settingsButton.addEventListener('click', () => { TabWorkspace.activate('settings'); });
             State.controlsContainer.appendChild(settingsButton);
 

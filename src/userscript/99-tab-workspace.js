@@ -40,7 +40,7 @@
             driversButton.type = 'button';
             driversButton.className = 'telemetry-drivers-button';
             driversButton.textContent = 'Drivers';
-            driversButton.title = 'View live racing leaderboard';
+
             driversButton.addEventListener('click', () => this.activate('drivers'));
             controls.prepend(driversButton);
 
