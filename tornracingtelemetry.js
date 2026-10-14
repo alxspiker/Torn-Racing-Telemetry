@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn Racing Telemetry
 // @namespace    https://www.torn.com/profiles.php?XID=2782979
-// @version      3.5.5
+// @version      4.0.0
 // @description  Enhanced Torn Racing UI: Telemetry, driver stats, advanced stats panel, history tracking, and race results export.
 // @match        https://www.torn.com/page.php?sid=racing*
 // @match        https://www.torn.com/loader.php?sid=racing*
@@ -21,12 +21,19 @@
     'use strict';
 
     const ScriptInfo = {
-        version: '3.5.5',
+        version: '4.0.0',
         author: "TheProgrammer",
         contactId: "2782979",
         contactUrl: function() { return `https://www.torn.com/profiles.php?XID=${this.contactId}`; },
         description: "Provides enhanced telemetry, stats analysis, historical tracking, and race results export for Torn Racing.",
         notes: [
+            "v4.0.0: Published identity restored; inline racing tabs and driver inspector; settings validate before saving; API response errors remain visible.",
+            "v4.0.0-beta.12: Persistent inline tabs (Drivers, Car, Info, History, Stats, Export, Settings) beneath the always-live racetrack; custom confirmation dialog and direct URL navigation for Change Car and Leave Race.",
+            "v4.0.0-beta.11: Race info opens from the integrated map header i icon and includes native track description, length and race details; removed the redundant Race tab and old tooltip.",
+            "v4.0.0-beta.10: Inline live map above leaderboard; Change Car and Leave Race in the map header overflow menu.",
+            "v4.0.0-beta.8: Integrated pre-race Current car panel into the Car view with performance bars and native Torn actions.",
+            "v4.0.0-beta.7: Integrated Torn’s post-race Race info block into the telemetry navigation and unified mobile panel navigation.",
+            "v4.0.0-beta.1: Isolated preview; redesigned mobile driver inspector, responsive panels, telemetry timing fixes, safer API pagination, and export hardening.",
             "v3.5.5: Removed tap/hover tooltips from the + / − driver-details control and progress bars. Fixed stale telemetry carrying into new races, improved reliability when Torn loads race data late, hid live progress bars for finished drivers, kept API keys out of request URLs, and enabled Speed, Accel, and progress bars by default for new installs.",
             "v3.5.4: Refined the driver list with compact stacked Speed/Accel values, thin full-race and current-lap progress bars, and a compact finish-time display. The Show Progress setting now controls the bars. Estimated lap time moved to expanded driver details and now uses an 8-second rolling speed average. Speed and Accel share live green/red acceleration colors.",
             "v3.5.3: Thanks to The_GoodGuy [4012936] for the suggestion. Click a racer to select them on the track; use the new arrow to view their details.",
@@ -137,7 +144,6 @@
         trackNameMap: null, carBaseStatsMap: null, currentRaceClass: null,
         isInitialized: false, isRaceViewActive: false, raceFinished: false, currentRaceId: null,
         controlsContainer: null,
-        historyStoragePurged: false,
         finalRaceData: [],
         mapSelectionInitializedForRace: null,
 
@@ -150,15 +156,11 @@
             });
 
             this.previousMetrics = {};
-            document.querySelectorAll('.custom-driver-item[data-stats-loaded]').forEach(el => {
-                el.removeAttribute('data-stats-loaded');
-                el.querySelectorAll('.api-stat').forEach(span => span.textContent = '...');
-                el.querySelector('.api-stats-container')?.classList.remove('error', 'loaded', 'no-key');
-            });
             this.raceFinished = false;
             this.finalRaceData = [];
             this.currentRaceId = null;
             this.mapSelectionInitializedForRace = null;
+            if (typeof TabWorkspace !== 'undefined') TabWorkspace.invalidateRaceBoundViews();
             UI.updateControlButtonsVisibility();
         },
         clearPopupsAndFullReset() {
@@ -241,6 +243,14 @@
             }
 
             return element;
+        },
+        escapeHTML(value) {
+            return String(value ?? '').replace(/[&<>"']/g, character => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            })[character]);
+        },
+        escapeMarkdownCell(value) {
+            return String(value ?? '').replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
         },
         escapeCSVField(field) {
             if (field === null || field === undefined) {
@@ -378,16 +388,16 @@
                 return { speed: 0, acceleration: 0, timeDelta: dtSinceLastUpdate * 1000, noUpdate: true };
             }
 
-            // REVISED: Stale data handling. If no update for a while, decay speed.
-            if (dtSinceLastUpdate * 1000 > staleThresholdMs) {
-                const decayFactor = 0.85;
-                const decayedSpeed = prev.reportedSpeed * decayFactor;
-                const gentleDeceleration = -0.5;
+            const progressChangedSinceSample = Math.abs(progressPercentage - prev.lastProgressValueAtChange) > 0.001;
+            // Delayed *new* progress is still usable: calculate over the full elapsed
+            // interval. Only decay an estimate when no new race progress has arrived.
+            if (dtSinceLastUpdate * 1000 > staleThresholdMs && !progressChangedSinceSample) {
+                const decay = Math.exp(-Math.min(dtSinceLastUpdate, 30) / 3);
+                prev.reportedSpeed = Math.max(0, prev.reportedSpeed * decay);
+                prev.acceleration = 0; // Unknown, not a physical braking event.
                 prev.time = timestamp;
-                prev.reportedSpeed = decayedSpeed;
-                prev.acceleration = this.ema(gentleDeceleration, prev.acceleration, 0.1);
                 prev.wasStale = true;
-                return { speed: prev.reportedSpeed, acceleration: prev.acceleration, timeDelta: dtSinceLastUpdate * 1000, noUpdate: false };
+                return { speed: prev.reportedSpeed, acceleration: 0, timeDelta: dtSinceLastUpdate * 1000, noUpdate: true };
             }
 
             if (dtSinceLastUpdate < minDt) {
@@ -400,6 +410,10 @@
             const progressChanged = Math.abs(progressPercentage - prev.lastProgressValueAtChange) > epsilon;
             let distanceDelta = 0;
 
+            if (progressPercentage + epsilon < prev.lastProgressValueAtChange) {
+                delete State.previousMetrics[driverId];
+                return this.calculateDriverMetrics(driverId, progressPercentage, timestamp);
+            }
             if (progressChanged) {
                  const dtSinceChange = (timestamp - prev.lastProgressChangeTimestamp) / 1000;
                  const progressDeltaSinceChange = progressPercentage - prev.lastProgressValueAtChange;
@@ -556,6 +570,49 @@
     };
 
     const UI = {
+        // One accessible, small-screen-first navigation system across all telemetry panels.
+        // Sections are real DOM nodes: existing controls, sortable tables and listeners survive tab switches.
+        buildPanelSections(sections, defaultKey) {
+            const root = Utils.createElement('div', { className: 'rtt-panel-workspace' });
+            const nav = Utils.createElement('div', { className: 'rtt-panel-navigation' });
+            nav.setAttribute('role', 'tablist');
+            const body = Utils.createElement('div', { className: 'rtt-panel-viewports' });
+            const entries = [];
+            for (const section of sections) {
+                const tab = Utils.createElement('button', { className: 'rtt-panel-nav-button', text: section.title });
+                tab.type = 'button';
+                tab.id = `rtt-tab-${section.key}-${this.panelNonce = (this.panelNonce || 0) + 1}`;
+                tab.setAttribute('role', 'tab');
+                tab.dataset.section = section.key;
+                const viewport = Utils.createElement('section', { className: 'rtt-panel-section' });
+                viewport.setAttribute('role', 'tabpanel');
+                viewport.setAttribute('aria-labelledby', tab.id);
+                viewport.append(section.content);
+                tab.addEventListener('click', () => activate(section.key));
+                tab.addEventListener('keydown', event => {
+                    if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
+                    event.preventDefault();
+                    const index = entries.findIndex(entry => entry.key === section.key);
+                    const next = entries[(index + (event.key === 'ArrowRight' ? 1 : -1) + entries.length) % entries.length];
+                    activate(next.key);
+                    next.tab.focus();
+                });
+                entries.push({ key: section.key, tab, viewport });
+                nav.append(tab);
+                body.append(viewport);
+            }
+            function activate(key) {
+                for (const entry of entries) {
+                    const active = entry.key === key;
+                    entry.tab.setAttribute('aria-selected', String(active));
+                    entry.tab.tabIndex = active ? 0 : -1;
+                    entry.viewport.hidden = !active;
+                }
+            }
+            activate(defaultKey || sections[0]?.key);
+            root.append(nav, body);
+            return root;
+        },
         createSettingsPopup() {
             if (State.settingsPopupInstance) State.settingsPopupInstance.remove();
 
@@ -687,7 +744,7 @@
             const settingsButtons = Utils.createElement('div', { className: 'settings-buttons' });
             settingsButtons.append(
                 Utils.createElement('button', { className: 'settings-btn toggle-telemetry-btn', text: 'Toggle Telemetry' }),
-                Utils.createElement('button', { className: 'settings-btn primary', attrs: { id: 'saveSettings' }, text: 'Save & Close' })
+                Utils.createElement('button', { className: 'settings-btn primary', attrs: { id: 'saveSettings' }, text: 'Save' })
             );
             settingsContent.appendChild(settingsButtons);
 
@@ -698,7 +755,28 @@
             );
             settingsContent.appendChild(dataButtons);
 
-            content.append(titleRow, settingsContent);
+            // Group existing settings rather than duplicating inputs or their event listeners.
+            const settingsTabs = [
+                { key: 'display', title: 'Display', ids: ['historyEnabled', 'statsPanelEnabled', 'hideOriginalList', 'telemetryShowSpeed', 'speedUnit', 'colorCode', 'animateChanges', 'showLapEstimate'] },
+                { key: 'tuning', title: 'Tuning', ids: ['speedSmoothingFactor', 'maxAnimationDurationMs', 'lapEstimateSmoothingFactor'] },
+                { key: 'data', title: 'API & Data', ids: ['fetchApiStatsOnClick', 'apiKey', 'historicalRaceLimit'] }
+            ];
+            const groups = settingsTabs.map(spec => ({
+                key: spec.key, title: spec.title,
+                content: Utils.createElement('div', { className: 'rtt-settings-group' })
+            }));
+            for (const section of settingsTabs) {
+                for (const id of section.ids) {
+                    const control = settingsContent.querySelector(`#${id}`);
+                    const item = control?.closest('.settings-item');
+                    if (item) groups.find(group => group.key === section.key).content.append(item);
+                }
+            }
+            const dataGroup = groups.find(group => group.key === 'data');
+            dataGroup.content.append(tosContainer, dataButtons);
+            settingsContent.replaceChildren(this.buildPanelSections(groups, 'display'));
+            settingsButtons.classList.add('rtt-panel-footer-actions');
+            content.append(titleRow, settingsContent, settingsButtons);
 
             content.querySelector('#historyEnabled').checked = Config.get('historyEnabled');
             content.querySelector('#statsPanelEnabled').checked = Config.get('statsPanelEnabled');
@@ -729,11 +807,11 @@
 
             const closePopup = () => {
                 popup.remove();
-                State.settingsPopupInstance = null;
+                if (State.settingsPopupInstance === popup) State.settingsPopupInstance = null;
             };
 
             content.querySelector('.settings-close').addEventListener('click', closePopup);
-            popup.addEventListener('click', e => { if (e.target === popup) closePopup(); });
+            popup.addEventListener('click', e => { if (e.target === popup && !popup.classList.contains('rtt-inline-tab-content')) closePopup(); });
             content.querySelector('.toggle-telemetry-btn').addEventListener('click', e => {
                 const newState = !Config.get('telemetryVisible');
                 Config.set('telemetryVisible', newState);
@@ -751,62 +829,53 @@
             });
 
             content.querySelector('#saveSettings').addEventListener('click', async () => {
-                const selectedOptions = [];
-
-                if (content.querySelector('#telemetryShowSpeed').checked) selectedOptions.push('speed');
-                if (content.querySelector('#telemetryShowAcceleration').checked) selectedOptions.push('acceleration');
-                if (content.querySelector('#telemetryShowProgress').checked) selectedOptions.push('progress');
-                Config.set('telemetryDisplayOptions', selectedOptions);
-
-                Config.set('historyEnabled', content.querySelector('#historyEnabled').checked);
-                Config.set('statsPanelEnabled', content.querySelector('#statsPanelEnabled').checked);
-                Config.set('speedUnit', content.querySelector('#speedUnit').value);
-                Config.set('colorCode', content.querySelector('#colorCode').checked);
-                Config.set('animateChanges', content.querySelector('#animateChanges').checked);
-
-                let speedSmooth = parseFloat(content.querySelector('#speedSmoothingFactor').value);
-                if (isNaN(speedSmooth) || speedSmooth < 0.1 || speedSmooth > 0.9) {
-                    speedSmooth = Config.defaults.speedSmoothingFactor;
-                    content.querySelector('#speedSmoothingFactor').value = speedSmooth;
-                    Utils.showNotification('Invalid Speed Smoothing Factor, reset to default.', 'error');
+                // Validate every field before writing any settings.
+                const numericFields = [
+                    ['speedSmoothingFactor', 'Speed smoothing factor', 0.1, 0.9, false],
+                    ['maxAnimationDurationMs', 'Max animation duration', 100, 3000, true],
+                    ['lapEstimateSmoothingFactor', 'Lap estimate smoothing', 0.01, 1, false],
+                    ['historicalRaceLimit', 'Race limit', 10, 1000, true]
+                ];
+                const values = {};
+                for (const [id, label, min, max, integer] of numericFields) {
+                    const input = content.querySelector(`#${id}`);
+                    const raw = input.value.trim();
+                    const value = Number(raw);
+                    if (!raw || !Number.isFinite(value) || value < min || value > max || (integer && !Number.isInteger(value))) {
+                        Utils.showNotification(`${label} must be ${integer ? 'a whole number' : 'a number'} between ${min} and ${max}.`, 'error');
+                        input.focus();
+                        return;
+                    }
+                    values[id] = value;
                 }
-                Config.set('speedSmoothingFactor', speedSmooth);
-
-                let animDuration = parseInt(content.querySelector('#maxAnimationDurationMs').value, 10);
-                if (isNaN(animDuration) || animDuration < 100 || animDuration > 3000) {
-                    animDuration = Config.defaults.maxAnimationDurationMs;
-                    content.querySelector('#maxAnimationDurationMs').value = animDuration;
-                    Utils.showNotification('Invalid Max Animation Duration, reset to default.', 'error');
+                const apiKeyInput = content.querySelector('#apiKey');
+                const apiKey = apiKeyInput.value.trim();
+                if (apiKey && apiKey.length < 16 && apiKey !== '###PDA-APIKEY###') {
+                    Utils.showNotification('API key seems too short. Settings were not saved.', 'error');
+                    apiKeyInput.focus();
+                    return;
                 }
-                Config.set('maxAnimationDurationMs', animDuration);
-
-                Config.set('showLapEstimate', content.querySelector('#showLapEstimate').checked);
-                Config.set('fetchApiStatsOnClick', content.querySelector('#fetchApiStatsOnClick').checked);
-
-                const apiKeyInputFromUser = content.querySelector('#apiKey').value.trim();
-                if (apiKeyInputFromUser.length > 0 && apiKeyInputFromUser.length < 16 && apiKeyInputFromUser !== '###PDA-APIKEY###') {
-                    Utils.showNotification('API Key seems too short.', 'error');
-                } else {
-                    Config.set('apiKey', apiKeyInputFromUser);
+                const speedUnit = content.querySelector('#speedUnit').value;
+                if (!['mph', 'kmh'].includes(speedUnit)) {
+                    Utils.showNotification('Choose mph or km/h. Settings were not saved.', 'error');
+                    content.querySelector('#speedUnit').focus();
+                    return;
                 }
-
-                let lapSmoothFactor = parseFloat(content.querySelector('#lapEstimateSmoothingFactor').value);
-                if (isNaN(lapSmoothFactor) || lapSmoothFactor < 0.01 || lapSmoothFactor > 1.0) {
-                    lapSmoothFactor = Config.defaults.lapEstimateSmoothingFactor;
-                    content.querySelector('#lapEstimateSmoothingFactor').value = lapSmoothFactor;
-                    Utils.showNotification('Invalid Lap Est. Smoothing Factor, reset to default.', 'error');
+                values.telemetryDisplayOptions = [
+                    ['telemetryShowSpeed', 'speed'],
+                    ['telemetryShowAcceleration', 'acceleration'],
+                    ['telemetryShowProgress', 'progress']
+                ].filter(([id]) => content.querySelector(`#${id}`).checked).map(([, option]) => option);
+                for (const id of ['historyEnabled', 'statsPanelEnabled', 'colorCode', 'animateChanges', 'showLapEstimate', 'fetchApiStatsOnClick']) {
+                    values[id] = content.querySelector(`#${id}`).checked;
                 }
-                Config.set('lapEstimateSmoothingFactor', lapSmoothFactor);
-
-                let raceLimit = parseInt(content.querySelector('#historicalRaceLimit').value, 10);
-                if (isNaN(raceLimit) || raceLimit < 10 || raceLimit > 1000) {
-                    raceLimit = Config.defaults.historicalRaceLimit;
-                    content.querySelector('#historicalRaceLimit').value = raceLimit;
-                    Utils.showNotification('Invalid Race Limit, reset to default.', 'error');
-                }
-                Config.set('historicalRaceLimit', raceLimit);
+                values.speedUnit = speedUnit;
+                values.apiKey = apiKey;
+                for (const [key, value] of Object.entries(values)) Config.set(key, value);
+                if (typeof TabWorkspace !== 'undefined') TabWorkspace.invalidateRaceBoundViews();
                 Utils.showNotification('Settings saved!', 'success');
                 closePopup();
+                if (typeof TabWorkspace !== 'undefined') TabWorkspace.restoreAfterAction('settings');
                 UI.updateControlButtonsVisibility();
 
                 RaceManager.stableUpdateCustomList();
@@ -817,6 +886,7 @@
                     await Config.clearData();
                     Utils.showNotification('Script data cleared!', 'success');
                     closePopup();
+                    if (typeof TabWorkspace !== 'undefined') TabWorkspace.restoreAfterAction('settings');
                     UI.updateControlButtonsVisibility();
                     RaceManager.stableUpdateCustomList();
                 }
@@ -866,7 +936,7 @@
             const crashes = races.filter(entry => entry.crashed).length;
             const wins = finished.filter(entry => entry.position === 1).length;
             const avgPosition = finished.length ? (finished.reduce((sum, entry) => sum + entry.position, 0) / finished.length) : null;
-            const winRate = finished.length ? (wins / finished.length) * 100 : null;
+            const winRate = races.length ? (wins / races.length) * 100 : null;
             const crashRate = races.length ? (crashes / races.length) * 100 : null;
             const bestLapValues = races.map(entry => entry.bestLap).filter(value => Number.isFinite(value));
             const avgBestLap = bestLapValues.length
@@ -1038,11 +1108,11 @@
 
             const closePanel = () => {
                 popup.remove();
-                State.advancedStatsPanelInstance = null;
+                if (State.advancedStatsPanelInstance === popup) State.advancedStatsPanelInstance = null;
             };
 
             content.querySelector('.stats-close').addEventListener('click', closePanel);
-            popup.addEventListener('click', e => { if (e.target === popup) closePanel(); });
+            popup.addEventListener('click', e => { if (e.target === popup && !popup.classList.contains('rtt-inline-tab-content')) closePanel(); });
             popup.appendChild(content);
             document.body.appendChild(popup);
             State.advancedStatsPanelInstance = popup;
@@ -1153,12 +1223,10 @@
                 if (errorMessages.length > 0) {
                     finalFragment.appendChild(this.createIssueBanner(errorMessages));
                 }
-                if (historicalStatsContent) {
-                    finalFragment.appendChild(historicalStatsContent);
-                }
-                if (trackAnalysisContent) {
-                    finalFragment.appendChild(trackAnalysisContent);
-                }
+                finalFragment.appendChild(this.buildPanelSections([
+                    { key: 'performance', title: 'Performance', content: historicalStatsContent || this.createPanelMessage('info-msg', 'No historical statistics available.') },
+                    { key: 'track', title: 'Track & Car', content: trackAnalysisContent || this.createPanelMessage('info-msg', 'No track analysis available.') }
+                ], 'performance'));
                 if (State.advancedStatsPanelInstance !== popup || !document.body.contains(popup)) {
                     return;
                 }
@@ -1428,7 +1496,7 @@
             if (currentUserCar && currentUserCar.stats) {
                 const carNameParagraph = document.createElement('p');
                 carNameParagraph.appendChild(Utils.createElement('strong', { text: currentUserCar.name }));
-                carNameParagraph.append(` (ID: ${currentUserCar.id})`);
+                if (Number.isInteger(currentUserCar.id)) carNameParagraph.append(` · Item #${currentUserCar.id}`);
                 fragment.appendChild(carNameParagraph);
 
                 const statOrder = ['Top Speed', 'Acceleration', 'Handling', 'Braking', 'Dirt', 'Tarmac', 'Safety'];
@@ -1441,7 +1509,8 @@
             } else if (currentUserCar) {
                 const fallbackParagraph = document.createElement('p');
                 fallbackParagraph.appendChild(Utils.createElement('strong', { text: currentUserCar.name }));
-                fallbackParagraph.append(` (ID: ${currentUserCar.id}) - `);
+                if (Number.isInteger(currentUserCar.id)) fallbackParagraph.append(` · Item #${currentUserCar.id}`);
+                fallbackParagraph.append(' — ');
                 fallbackParagraph.appendChild(Utils.createElement('i', { text: 'Stats could not be parsed.' }));
                 fragment.appendChild(fallbackParagraph);
             } else {
@@ -1532,13 +1601,16 @@
 
             try {
                 const nameEl = carDiv.querySelector('.model p:first-child');
-                const imgEl = carDiv.querySelector('.model .img img.torn-item');
+                const imgEl = carDiv.querySelector('.model .img img.torn-item, .model .img img, .model-wrap img');
                 const name = nameEl ? nameEl.textContent.trim() : 'Unknown Car';
                 let id = null;
 
-                if (imgEl && imgEl.src) {
-                    const idMatch = imgEl.src.match(/\/items\/(\d+)\//);
-                    if (idMatch) id = parseInt(idMatch[1], 10);
+                const fallbackImg = document.querySelector('#leaderBoard li.selected .car img')
+                    || [...document.querySelectorAll('#leaderBoard li .car img')].find(img => img.title === name);
+                for (const image of [imgEl, fallbackImg]) {
+                    const src = image?.getAttribute('src') || image?.src || '';
+                    const idMatch = src.match(/\/(?:items)\/(\d+)(?:\/|$)/);
+                    if (idMatch) { id = Number(idMatch[1]); break; }
                 }
 
                 const stats = {};
@@ -1574,14 +1646,15 @@
             const userResult = race.results.find(result => String(result.driver_id) === String(userId));
             if (!userResult) return null;
 
-            const endTimestampSec = userResult.time_ended ?? race.schedule?.end ?? race.schedule?.start ?? null;
-            const endTimestampMs = Number.isFinite(endTimestampSec) ? endTimestampSec * 1000 : Date.now();
-            const position = Number.isFinite(userResult.position) ? userResult.position : null;
+            const numberOrNull = value => value == null || value === '' || !Number.isFinite(Number(value)) ? null : Number(value);
+            const endTimestampSec = numberOrNull(userResult.time_ended ?? race.schedule?.end ?? race.schedule?.start);
+            const endTimestampMs = endTimestampSec !== null && endTimestampSec > 0 ? endTimestampSec * 1000 : null;
+            const position = numberOrNull(userResult.position);
             const crashed = userResult.has_crashed === true;
-            const raceTime = Number.isFinite(userResult.race_time) ? userResult.race_time : null;
-            const bestLap = Number.isFinite(userResult.best_lap_time) ? userResult.best_lap_time : null;
+            const raceTime = numberOrNull(userResult.race_time);
+            const bestLap = numberOrNull(userResult.best_lap_time);
             const participants = race.participants?.current ?? race.results.length ?? null;
-            const skillGain = Number.isFinite(race.skill_gain) ? race.skill_gain : null;
+            const skillGain = numberOrNull(race.skill_gain);
             const trackName = State.trackNameMap?.[race.track_id] || `Track ${race.track_id ?? '?'}`;
 
             let resultLabel = 'Unknown';
@@ -1820,10 +1893,10 @@
 
             const closePanel = () => {
                 popup.remove();
-                State.historyPanelInstance = null;
+                if (State.historyPanelInstance === popup) State.historyPanelInstance = null;
             };
             content.querySelector('.history-close').addEventListener('click', closePanel);
-            popup.addEventListener('click', e => { if (e.target === popup) closePanel(); });
+            popup.addEventListener('click', e => { if (e.target === popup && !popup.classList.contains('rtt-inline-tab-content')) closePanel(); });
 
             popup.appendChild(content);
             document.body.appendChild(popup);
@@ -1855,9 +1928,13 @@
                 historyFragment.appendChild(this.createPanelMessage('info-msg', 'Configure an API key to load race timeline and recent-races table.'));
             }
 
-            historyFragment.appendChild(this.createHistoryDeltaCards(raceEntries));
-            historyFragment.appendChild(this.createHistoryRaceTimeline(raceEntries));
-            historyFragment.appendChild(this.createSortableHistoryRacesTable(raceEntries));
+            const historyOverview = document.createDocumentFragment();
+            historyOverview.append(this.createHistoryDeltaCards(raceEntries), this.createHistoryRaceTimeline(raceEntries));
+            const historyRaces = this.createSortableHistoryRacesTable(raceEntries);
+            historyFragment.appendChild(this.buildPanelSections([
+                { key: 'overview', title: 'Overview', content: historyOverview },
+                { key: 'races', title: 'All races', content: historyRaces }
+            ], 'overview'));
 
             if (State.historyPanelInstance !== popup || !document.body.contains(popup)) {
                 return;
@@ -1882,17 +1959,16 @@
                     <p><strong>Description:</strong> ${ScriptInfo.description}</p>
                     <h3>Contact & Support</h3>
                     <p>For suggestions, bug reports, or questions, please contact <a href="${ScriptInfo.contactUrl()}" target="_blank" rel="noopener noreferrer">${ScriptInfo.author} [${ScriptInfo.contactId}]</a> via Torn mail.</p>
-                    <h3>Important Notes</h3>
-                    <ul>${notesHTML}</ul>
+                    <details class="rtt-info-notes"><summary>Release notes &amp; technical details</summary><ul>${notesHTML}</ul></details>
                 </div>`;
 
             const closePanel = () => {
                 popup.remove();
-                State.infoPanelInstance = null;
+                if (State.infoPanelInstance === popup) State.infoPanelInstance = null;
             };
 
             content.querySelector('.info-close').addEventListener('click', closePanel);
-            popup.addEventListener('click', e => { if (e.target === popup) closePanel(); });
+            popup.addEventListener('click', e => { if (e.target === popup && !popup.classList.contains('rtt-inline-tab-content')) closePanel(); });
             popup.appendChild(content);
             document.body.appendChild(popup);
             State.infoPanelInstance = popup;
@@ -1928,11 +2004,11 @@
 
             const closePopup = () => {
                 popup.remove();
-                State.downloadPopupInstance = null;
+                if (State.downloadPopupInstance === popup) State.downloadPopupInstance = null;
             };
 
             content.querySelector('.download-close').addEventListener('click', closePopup);
-            popup.addEventListener('click', e => { if (e.target === popup) closePopup(); });
+            popup.addEventListener('click', e => { if (e.target === popup && !popup.classList.contains('rtt-inline-tab-content')) closePopup(); });
 
             const formatSelect = content.querySelector('#downloadFormat');
             const downloadBtn = content.querySelector('#downloadFileBtn');
@@ -1978,10 +2054,11 @@
                         DataExporter.downloadData(dataString, fileExt, mimeType);
                         Utils.showNotification('File download initiated.', 'success');
                     } else if (actionType === 'copy') {
-                        DataExporter.copyToClipboard(dataString);
+                        await DataExporter.copyToClipboard(dataString);
                         Utils.showNotification('Copied to clipboard!', 'success');
                     }
                     closePopup();
+                    if (typeof TabWorkspace !== 'undefined') TabWorkspace.restoreAfterAction('export');
                 } catch (e) {
                     Utils.showNotification(`Error preparing data: ${e.message}`, 'error');
                 }
@@ -2004,51 +2081,58 @@
             if (historyBtn) historyBtn.style.display = Config.get('historyEnabled') ? 'inline-block' : 'none';
             if (statsBtn) statsBtn.style.display = Config.get('statsPanelEnabled') ? 'inline-block' : 'none';
             if (downloadBtn) downloadBtn.style.display = State.raceFinished ? 'inline-block' : 'none';
+            if (typeof RaceInfoIntegration !== 'undefined') RaceInfoIntegration.sync();
+            if (typeof TabWorkspace !== 'undefined') TabWorkspace.refreshVisibility();
         },
         initializeControls() {
             if (!State.controlsContainer) return;
             State.controlsContainer.innerHTML = '';
 
+            const carButton = document.createElement('button');
+            carButton.className = 'telemetry-car-button';
+            carButton.textContent = 'Car';
+            carButton.title = 'View your current car and race actions';
+            carButton.type = 'button';
+            carButton.style.display = 'none';
+            carButton.addEventListener('click', () => { TabWorkspace.activate('car'); });
+            State.controlsContainer.appendChild(carButton);
+
             const infoButton = document.createElement('button');
             infoButton.className = 'telemetry-info-button';
-            infoButton.textContent = '\u2139\uFE0F Info';
+            infoButton.textContent = 'Info';
             infoButton.title = 'View Script Information';
-            infoButton.addEventListener('click', () => { this.createInfoPanel(); });
+            infoButton.addEventListener('click', () => { TabWorkspace.activate('info'); });
             State.controlsContainer.appendChild(infoButton);
 
             const historyButton = document.createElement('button');
             historyButton.className = 'telemetry-history-button';
-            historyButton.textContent = '\u{1F4DC} History';
+            historyButton.textContent = 'History';
             historyButton.title = 'View Your Racing Stats History';
             historyButton.style.display = 'none';
-            historyButton.addEventListener('click', () => { this.createHistoryPanel(); });
+            historyButton.addEventListener('click', () => { TabWorkspace.activate('history'); });
             State.controlsContainer.appendChild(historyButton);
 
             const statsButton = document.createElement('button');
             statsButton.className = 'telemetry-stats-button';
-            statsButton.textContent = '\u{1F4CA} Stats';
+            statsButton.textContent = 'Stats';
             statsButton.title = 'Open Advanced Race Statistics';
             statsButton.style.display = 'none';
-            statsButton.addEventListener('click', () => {
-                RaceManager.updateTrackAndClassInfo()
-                    .then(() => { this.createAdvancedStatsPanel(); })
-                    .catch(() => { Utils.showNotification('Error getting latest track/class info.', 'error'); });
-            });
+            statsButton.addEventListener('click', () => { TabWorkspace.activate('stats'); });
             State.controlsContainer.appendChild(statsButton);
 
             const downloadButton = document.createElement('button');
             downloadButton.className = 'telemetry-download-button';
-            downloadButton.textContent = '\u{1F4BE} Export';
+            downloadButton.textContent = 'Export';
             downloadButton.title = 'Export Race Results';
             downloadButton.style.display = 'none';
-            downloadButton.addEventListener('click', () => { this.createDownloadPopup(); });
+            downloadButton.addEventListener('click', () => { TabWorkspace.activate('export'); });
             State.controlsContainer.appendChild(downloadButton);
 
             const settingsButton = document.createElement('button');
             settingsButton.className = 'telemetry-settings-button';
-            settingsButton.textContent = '\u2699 Settings';
+            settingsButton.textContent = 'Settings';
             settingsButton.title = 'Open Telemetry & UI Settings';
-            settingsButton.addEventListener('click', () => { this.createSettingsPopup(); });
+            settingsButton.addEventListener('click', () => { TabWorkspace.activate('settings'); });
             State.controlsContainer.appendChild(settingsButton);
 
             this.updateControlButtonsVisibility();
@@ -2057,7 +2141,6 @@
     };
 
     const APIManager = {
-        isFetching: new Set(),
         createApiError(responseLike, errorPayload = null) {
             let errorMessage = responseLike?.status
                 ? `API Error (${responseLike.status}): ${responseLike.statusText || 'Request failed'}`
@@ -2077,20 +2160,19 @@
             return error;
         },
         async parseJsonResponse(response) {
-            let data = null;
-
+            let data;
             try {
                 data = await response.json();
-            } catch (e) { }
-
-            if (!response.ok) {
-                throw this.createApiError(response, data);
+            } catch (cause) {
+                if (!response.ok) throw this.createApiError(response);
+                throw new Error('Torn API returned invalid JSON.', { cause });
             }
-            if (data?.error) {
-                throw this.createApiError(response, data.error);
+            if (!response.ok) throw this.createApiError(response, data);
+            if (data?.error) throw this.createApiError(response, data.error);
+            if (!data || typeof data !== 'object' || Array.isArray(data)) {
+                throw new Error('Torn API returned an invalid response: expected a JSON object.');
             }
-
-            return data ?? {};
+            return data;
         },
         shouldRetryRequest(error, attempt, retries) {
             if (attempt >= retries - 1) {
@@ -2110,7 +2192,10 @@
         normalizeApiUrl(urlLike, base = 'https://api.torn.com') {
             if (!urlLike || typeof urlLike !== 'string') return null;
             try {
-                return new URL(urlLike, base).toString();
+                const url = new URL(urlLike, base);
+                // Never forward a user's API key to a host supplied in pagination metadata.
+                if (url.protocol !== 'https:' || url.hostname !== 'api.torn.com' || url.port || !url.pathname.startsWith('/v2/')) return null;
+                return url.toString();
             } catch (e) {
                 return null;
             }
@@ -2140,69 +2225,6 @@
             }
 
             throw new Error('Max retries reached');
-        },
-        async fetchAndDisplayRacingStats(driverItem, userId) {
-            const detailsDiv = driverItem.querySelector('.driver-details');
-            const statsContainer = detailsDiv?.querySelector('.api-stats-container');
-            if (!statsContainer || !userId || this.isFetching.has(userId)) return;
-            const hideUnavailableApiCards = () => {
-                statsContainer.querySelectorAll('.driver-api-item').forEach(card => {
-                    const value = card.querySelector('.driver-api-value')?.textContent.trim() || '';
-                    card.style.display = value.includes('N/A') || value === '-' ? 'none' : '';
-                });
-            };
-
-            if (!Utils.isApiKeyAvailable()) {
-                statsContainer.classList.add('no-key');
-                statsContainer.querySelector('.api-stat-error-msg').textContent = 'API key not configured in settings.';
-                statsContainer.querySelectorAll('.api-stat').forEach(span => span.textContent = 'N/A');
-                hideUnavailableApiCards();
-                driverItem.dataset.statsLoaded = 'true';
-                return;
-            }
-
-            const apiKey = Config.get('apiKey');
-            this.isFetching.add(userId);
-            statsContainer.classList.remove('error', 'loaded', 'no-key');
-            statsContainer.classList.add('loading');
-            statsContainer.querySelector('.api-stat-error-msg').textContent = '';
-            statsContainer.querySelectorAll('.api-stat').forEach(span => span.textContent = '...');
-            const apiUrl = `https://api.torn.com/v2/user?selections=personalstats&id=${encodeURIComponent(userId)}&cat=racing`;
-            try {
-                const data = await this.fetchWithAuthHeader(apiUrl, apiKey);
-                const racingStats = data?.personalstats?.racing;
-
-                if (racingStats && typeof racingStats === 'object') {
-                    const skill = racingStats.skill?.toLocaleString() ?? 'N/A';
-                    statsContainer.querySelector('.stat-skill').textContent = skill;
-                    statsContainer.querySelector('.stat-points').textContent = racingStats.points?.toLocaleString() ?? 'N/A';
-                    const racesEntered = racingStats.races?.entered;
-                    const racesWon = racingStats.races?.won;
-                    statsContainer.querySelector('.stat-races-entered').textContent = racesEntered?.toLocaleString() ?? 'N/A';
-                    statsContainer.querySelector('.stat-races-won').textContent = racesWon?.toLocaleString() ?? 'N/A';
-                    const winRate = (racesEntered && racesWon > 0) ? ((racesWon / racesEntered) * 100).toFixed(1) + '%' : (racesEntered > 0 ? '0.0%' : 'N/A');
-                    statsContainer.querySelector('.stat-win-rate').textContent = winRate;
-                    statsContainer.classList.add('loaded');
-                    hideUnavailableApiCards();
-                    driverItem.dataset.statsLoaded = 'true';
-                } else {
-                    statsContainer.classList.add('error');
-                    statsContainer.querySelector('.api-stat-error-msg').textContent = 'No racing stats found (or permission denied).';
-                    statsContainer.querySelectorAll('.api-stat').forEach(span => span.textContent = 'N/A');
-                    hideUnavailableApiCards();
-                    driverItem.dataset.statsLoaded = 'true';
-                }
-            } catch (error) {
-                statsContainer.classList.add('error');
-                statsContainer.querySelector('.api-stat-error-msg').textContent = `Error: ${error.message}`;
-                statsContainer.querySelectorAll('.api-stat').forEach(span => span.textContent = '-');
-                hideUnavailableApiCards();
-                delete driverItem.dataset.statsLoaded;
-                Utils.showNotification(error.message, 'error');
-            } finally {
-                statsContainer.classList.remove('loading');
-                this.isFetching.delete(userId);
-            }
         },
         async fetchTrackData(apiKey) {
             const cached = GM_getValue('tornTrackCache', null);
@@ -2242,13 +2264,18 @@
                     break;
                 }
 
-                allRaces.push(...pageRaces);
-                if (allRaces.length >= boundedLimit) {
-                    break;
+                const knownRaceIds = new Set(allRaces.map(race => String(race.id)));
+                for (const race of pageRaces) {
+                    const id = String(race.id);
+                    if (knownRaceIds.has(id)) continue;
+                    allRaces.push(race);
+                    knownRaceIds.add(id);
                 }
+                if (allRaces.length >= boundedLimit) break;
 
-                const metadataLinks = data?._metadata?.links || {};
-                nextUrl = this.normalizeApiUrl(metadataLinks.next) || this.normalizeApiUrl(metadataLinks.prev);
+                // The previous-page link is not a forward-pagination fallback.
+                nextUrl = this.normalizeApiUrl(data?._metadata?.links?.next);
+                if (!nextUrl || pageRaces.every(race => !race?.id)) break;
             }
 
             return allRaces.slice(0, boundedLimit);
@@ -2317,7 +2344,7 @@
                 try {
                     const races = await APIManager.fetchHistoricalRaceData(Config.get('apiKey'), State.userId, 10);
                     const race = races.find(entry => String(entry.id) === key);
-                    const gain = Number(race?.skill_gain);
+                    const gain = race?.skill_gain == null ? NaN : Number(race.skill_gain);
                     if (Number.isFinite(gain)) {
                         this.skillGainCache.set(key, gain);
                         return gain;
@@ -2414,11 +2441,11 @@
                 results.set(userId, {
                     ...existing,
                     userId,
-                    position: Number.isFinite(apiResult.position) ? apiResult.position : existing.position,
+                    position: Number.isFinite(Number(apiResult.position)) && apiResult.position != null ? Number(apiResult.position) : existing.position,
                     crashed,
-                    raceTime: Number.isFinite(raceTime) ? raceTime : existing.raceTime,
-                    bestLap: !crashed && Number.isFinite(bestLap) ? bestLap : existing.bestLap ?? null,
-                    displayTime: existing.displayTime || (Number.isFinite(raceTime) ? Utils.formatTime(raceTime, true) : null)
+                    raceTime: apiResult.race_time != null && Number.isFinite(raceTime) ? raceTime : existing.raceTime,
+                    bestLap: !crashed && apiResult.best_lap_time != null && Number.isFinite(bestLap) ? bestLap : existing.bestLap ?? null,
+                    displayTime: existing.displayTime || (apiResult.race_time != null && Number.isFinite(raceTime) ? Utils.formatTime(raceTime, true) : null)
                 });
             });
         },
@@ -2446,6 +2473,7 @@
 
         buildResults(payload) {
             const intervalsPerLap = payload.raceData.trackData.intervals.length;
+            if (!intervalsPerLap) return new Map();
             const results = [];
             const crashes = [];
             Object.entries(payload.raceData.cars).forEach(([playerName, encodedIntervals]) => {
@@ -2487,7 +2515,9 @@
             if (missingIds.length) Utils.showNotification(`Loading racing skill for ${missingIds.length} racer${missingIds.length === 1 ? '' : 's'}…`);
             for (let index = 0; index < missingIds.length; index++) {
                 const userId = missingIds[index];
-                const skill = await this.fetchSkill(userId);
+                let skill = null;
+                try { skill = await this.fetchSkill(userId); }
+                catch (error) { console.warn('Telemetry Script: racing skill unavailable for a driver:', error.message); }
                 if (Number.isFinite(skill)) {
                     skills.set(userId, skill);
                     this.saveSkill(userId, skill);
@@ -2547,7 +2577,8 @@
                     trackStats[trackId].crashes++;
                     carStats[carName].crashes++;
                 } else {
-                    const position = userResult.position;
+                    const position = Number(userResult.position);
+                    if (!Number.isInteger(position) || position < 1) return;
                     overall.positionSum += position;
                     trackStats[trackId].positionSum += position;
                     carStats[carName].positionSum += position;
@@ -2568,8 +2599,9 @@
             });
             const calcRates = (stats) => {
                 const finishedRaces = stats.races - stats.crashes;
-                stats.winRate = finishedRaces > 0 ? (stats.wins / finishedRaces) * 100 : 0;
-                stats.podiumRate = finishedRaces > 0 ? (stats.podiums / finishedRaces) * 100 : 0;
+                // A crashed entry still counts as a race entered, including for win rate.
+                stats.winRate = stats.races > 0 ? (stats.wins / stats.races) * 100 : 0;
+                stats.podiumRate = stats.races > 0 ? (stats.podiums / stats.races) * 100 : 0;
                 stats.crashRate = stats.races > 0 ? (stats.crashes / stats.races) * 100 : 0;
                 stats.avgPosition = finishedRaces > 0 ? (stats.positionSum / finishedRaces) : 0;
                 return stats;
@@ -2600,18 +2632,19 @@
         },
         formatAsHTML() {
             const data = this.getFinalData();
+            const esc = Utils.escapeHTML;
             let tableRows = data.results.map(r => `
                 <tr>
                     <td>${r.position}</td>
-                    <td><a href="https://www.torn.com/profiles.php?XID=${r.userId}" target="_blank">${r.name} [${r.userId}]</a></td>
-                    <td>${r.car}</td>
-                    <td>${r.status === 'finished' ? r.finalTimeOrStatus : r.status.toUpperCase()}</td>
+                    <td><a href="https://www.torn.com/profiles.php?XID=${encodeURIComponent(r.userId)}" target="_blank" rel="noopener noreferrer">${esc(r.name)} [${esc(r.userId)}]</a></td>
+                    <td>${esc(r.car)}</td>
+                    <td>${esc(r.status === 'finished' ? r.finalTimeOrStatus : r.status.toUpperCase())}</td>
                 </tr>`).join('');
 
             return `<!DOCTYPE html>
 <html>
 <head>
-<title>Torn Race Results - ${data.trackInfo.name || 'Unknown Track'}</title>
+<title>Torn Race Results - ${esc(data.trackInfo.name || 'Unknown Track')}</title>
 <meta charset="UTF-8">
 <style>
     body { font-family: sans-serif; line-height: 1.4; background-color: #f0f0f0; color: #333; margin: 20px; }
@@ -2626,8 +2659,8 @@
 </head>
 <body>
     <h1>Race Results</h1>
-    <h2>Race ID: ${data.raceId || 'N/A'}</h2>
-    <h2>Track: ${data.trackInfo.name || 'Unknown'} (${data.trackInfo.laps} Laps, ${data.trackInfo.length} Miles)</h2>
+    <h2>Race ID: ${esc(data.raceId || 'N/A')}</h2>
+    <h2>Track: ${esc(data.trackInfo.name || 'Unknown')} (${esc(data.trackInfo.laps)} Laps, ${esc(data.trackInfo.length)} Miles)</h2>
     <table>
         <thead>
             <tr><th>Pos</th><th>Driver</th><th>Car</th><th>Time/Status</th></tr>
@@ -2642,15 +2675,16 @@
         },
         formatAsMarkdown() {
             const data = this.getFinalData();
+            const esc = Utils.escapeMarkdownCell;
             let md = `# Race Results\n\n`;
             md += `**Race ID:** ${data.raceId || 'N/A'}\n`;
             md += `**Track:** ${data.trackInfo.name || 'Unknown'} (${data.trackInfo.laps} Laps, ${data.trackInfo.length} Miles)\n\n`;
             md += `| Pos | Driver | Car | Time/Status |\n`;
             md += `|----:|--------|-----|-------------|\n`;
             data.results.forEach(r => {
-                const driverLink = `[${r.name} [${r.userId}]](https://www.torn.com/profiles.php?XID=${r.userId})`;
+                const driverLink = `[${esc(r.name)} [${esc(r.userId)}]](https://www.torn.com/profiles.php?XID=${encodeURIComponent(r.userId)})`;
                 const status = r.status === 'finished' ? r.finalTimeOrStatus : r.status.toUpperCase();
-                md += `| ${r.position} | ${driverLink} | ${r.car} | ${status} |\n`;
+                md += `| ${r.position} | ${driverLink} | ${esc(r.car)} | ${esc(status)} |\n`;
             });
             md += `\n*Exported by Torn Racing Telemetry Script v${ScriptInfo.version}*`;
             return md;
@@ -2729,8 +2763,8 @@
                 const crashed = Boolean(result?.crashed || driver.statusClass === 'crashed');
                 const finishTime = crashed ? 'crashed' : (result?.displayTime || driver.originalStatusText || '');
                 const inferredBestLap = !crashed && Number(raceFields.lapsAmount) === 1 ? Utils.parseTime(finishTime) : null;
-                const bestLapSeconds = Number.isFinite(result?.bestLap) ? result.bestLap : inferredBestLap;
-                const bestLap = crashed ? 'crashed' : (Number.isFinite(result?.bestLap)
+                const bestLapSeconds = result?.bestLap != null && Number.isFinite(result.bestLap) ? result.bestLap : inferredBestLap;
+                const bestLap = crashed ? 'crashed' : (result?.bestLap != null && Number.isFinite(result.bestLap)
                     ? Utils.formatTime(result.bestLap, true)
                     : (Number.isFinite(inferredBestLap) ? finishTime : 'N/A'));
                 const racingSkill = skills.get(driver.userId);
@@ -2774,18 +2808,19 @@
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
-            URL.revokeObjectURL(url);
+            // Revoking synchronously can abort downloads in WebKit/Torn PDA.
+            setTimeout(() => URL.revokeObjectURL(url), 30000);
         },
-        copyToClipboard(text) {
-             if (typeof GM_setClipboard !== 'undefined') {
-                 GM_setClipboard(text);
-             } else if (navigator.clipboard && navigator.clipboard.writeText) {
-                navigator.clipboard.writeText(text).catch(err => {
-                     Utils.showNotification('Failed to copy to clipboard.', 'error');
-                 });
-             } else {
-                Utils.showNotification('Clipboard copy not supported by browser/script manager.', 'error');
-             }
+        async copyToClipboard(text) {
+            if (typeof GM_setClipboard === 'function') {
+                GM_setClipboard(text);
+                return;
+            }
+            if (navigator.clipboard?.writeText) {
+                await navigator.clipboard.writeText(text);
+                return;
+            }
+            throw new Error('Clipboard copying is unavailable in this browser or userscript manager.');
         }
     };
 
@@ -2975,17 +3010,6 @@
                 item.classList.toggle('map-selected', item.dataset.originalId === selectedOriginalId);
             });
         },
-        hideUnavailableMetricCards(detailsDiv) {
-            detailsDiv?.querySelectorAll('.driver-metric-item:not(.metric-est-lap)').forEach(card => {
-                const value = card.querySelector('.driver-metric-value')?.textContent.trim();
-                const unavailableValues = new Set([
-                    'N/A', '0.00%', '-/-', '-%',
-                    '- mph', '0 mph', '0.0 mph',
-                    '- g', '0 g', '0.000 g'
-                ]);
-                card.style.display = unavailableValues.has(value) ? 'none' : '';
-            });
-        },
         ensureElementRefs(element) {
             if (element?._uiRefs?.colorIndicator && element?._uiRefs?.telemetryDiv) {
                 return element._uiRefs;
@@ -2999,8 +3023,7 @@
                 progressBars: element.querySelector('.driver-progress-bars'),
                 fullProgressBar: element.querySelector('.driver-progress-full .driver-progress-fill'),
                 lapProgressBar: element.querySelector('.driver-progress-lap .driver-progress-fill'),
-                detailsButton: element.querySelector('.driver-details-toggle'),
-                detailsDiv: element.querySelector('.driver-details')
+                detailsButton: element.querySelector('.driver-details-toggle')
             };
             return element._uiRefs;
         },
@@ -3009,6 +3032,8 @@
             item.className = 'custom-driver-item';
             item.dataset.originalId = driverData.originalId;
             item.dataset.userId = driverData.userId;
+            item.tabIndex = 0;
+            item.setAttribute('aria-label', `Select ${driverData.name} on the race map`);
 
             const isSelf = driverData.userId === State.userId;
             if (isSelf) item.classList.add('is-self');
@@ -3036,21 +3061,19 @@
             progressBars.append(fullProgressTrack, lapProgressTrack);
             const detailsButton = Utils.createElement('button', {
                 className: 'driver-details-toggle',
-                text: '+',
+                text: '↗',
                 attrs: {
                     type: 'button',
-                    'aria-label': 'Show driver details',
-                    'aria-expanded': 'false'
+                    'aria-label': 'Open driver inspector'
                 }
             });
-            const detailsDiv = Utils.createElement('div', { className: 'driver-details' });
 
             this.setDriverName(nameDiv, driverData.name, isSelf);
             Telemetry.ensureDisplayRefs(telemetryDiv);
 
             infoRow.append(colorIndicator, carImg, nameDiv, telemetryDiv, detailsButton);
-            item.append(infoRow, progressBars, detailsDiv);
-            item._uiRefs = { colorIndicator, carImg, nameDiv, telemetryDiv, progressBars, fullProgressBar, lapProgressBar, detailsButton, detailsDiv };
+            item.append(infoRow, progressBars);
+            item._uiRefs = { colorIndicator, carImg, nameDiv, telemetryDiv, progressBars, fullProgressBar, lapProgressBar, detailsButton };
 
             this.updateDriverElement(item, driverData, position);
             return item;
@@ -3059,17 +3082,16 @@
             const driverId = driverData.userId;
             const isSelf = driverId === State.userId;
             const now = Date.now();
-            const detailsVisible = element.classList.contains('details-visible');
             const driverState = State.previousMetrics[driverId];
             const refs = this.ensureElementRefs(element);
 
             const mapSelected = document.getElementById(driverData.originalId)?.classList.contains('selected');
-            element.className = `custom-driver-item status-${driverData.statusClass} ${isSelf ? 'is-self' : ''} ${detailsVisible ? 'details-visible' : ''} ${mapSelected ? 'map-selected' : ''}`.trim().replace(/\s+/g, ' ');
+            element.className = `custom-driver-item status-${driverData.statusClass} ${isSelf ? 'is-self' : ''} ${mapSelected ? 'map-selected' : ''}`.trim().replace(/\s+/g, ' ');
 
             if (refs.detailsButton) {
-                refs.detailsButton.textContent = detailsVisible ? '−' : '+';
-                refs.detailsButton.setAttribute('aria-label', detailsVisible ? 'Hide driver details' : 'Show driver details');
-                refs.detailsButton.setAttribute('aria-expanded', String(detailsVisible));
+                refs.detailsButton.textContent = '↗';
+                refs.detailsButton.setAttribute('aria-label', `Open details for ${driverData.name}`);
+                refs.detailsButton.setAttribute('title', 'Open driver inspector');
             }
 
             const colorIndicator = refs.colorIndicator;
@@ -3120,9 +3142,7 @@
                         telemetryText = `\u{1F3C1} ${finishTimeText}`;
                     } else {
                         const displayParts = [];
-                        if (displayOptions.includes('speed')) displayParts.push(`0 ${speedUnitLabel}`);
-                        if (displayOptions.includes('acceleration')) displayParts.push('0.0 g');
-                        telemetryText = displayParts.length > 0 ? displayParts.join(' | ') : '-';
+                        telemetryText = 'Waiting';
                     }
 
                     Telemetry.setTelemetryDisplay(telemetryDiv, telemetryText, telemetryColor);
@@ -3131,7 +3151,7 @@
                     const targetSpeed = Utils.convertSpeed(metrics.speed, speedUnit);
                     const targetAcc = metrics.acceleration;
 
-                    if (Config.get('showLapEstimate') && driverData.progress < 100 && State.trackInfo.id && driverState) {
+                    if (Config.get('showLapEstimate') && driverData.progress < 100 && State.trackInfo.length > 0 && State.previousMetrics[driverId]) {
                         Telemetry.calculateSmoothedLapEstimate(driverId, metrics);
                     }
 
@@ -3208,195 +3228,11 @@
                 refs.progressBars.removeAttribute('title');
             }
 
-            const detailsDiv = refs.detailsDiv;
-            if (detailsDiv) {
-                const needsHTMLStructure = detailsVisible && !detailsDiv.hasChildNodes();
-                if (needsHTMLStructure) {
-                    const apiStatsHTML = Config.get('fetchApiStatsOnClick')
-                        ? `
-                            <div class="api-stats-container">
-                                <div class="driver-section-title">API Racing Stats</div>
-                                <div class="driver-api-grid">
-                                    <div class="driver-api-item">
-                                        <span class="driver-api-label">Skill</span>
-                                        <span class="driver-api-value"><span class="api-stat stat-skill">...</span></span>
-                                    </div>
-                                    <div class="driver-api-item">
-                                        <span class="driver-api-label">Points</span>
-                                        <span class="driver-api-value"><span class="api-stat stat-points">...</span></span>
-                                    </div>
-                                    <div class="driver-api-item">
-                                        <span class="driver-api-label">Races</span>
-                                        <span class="driver-api-value"><span class="api-stat stat-races-entered">...</span> (<span class="api-stat stat-races-won">...</span> wins)</span>
-                                    </div>
-                                    <div class="driver-api-item">
-                                        <span class="driver-api-label">Win Rate</span>
-                                        <span class="driver-api-value"><span class="api-stat stat-win-rate">...</span></span>
-                                    </div>
-                                </div>
-                                <span class="api-stat-error-msg"></span>
-                            </div>`
-                        : '';
-
-                    detailsDiv.innerHTML = `
-                        <div class="driver-details-shell">
-                            <div class="driver-details-topline">
-                                <div class="driver-identity">
-                                    <span class="driver-identity-label">User</span>
-                                    <span class="driver-identity-value">${driverData.name} [<a href="/profiles.php?XID=${driverId}" target="_blank" rel="noopener noreferrer" title="View Profile">${driverId}</a>] ${isSelf ? '<strong>(You)</strong>' : ''}</span>
-                                </div>
-                                <div class="driver-status-wrap">
-                                    <span class="driver-identity-label">Status</span>
-                                    <span class="driver-status-chip detail-status">${driverData.statusClass}</span>
-                                    <span class="detail-original-status"></span>
-                                </div>
-                            </div>
-                            <div class="driver-meta-row">
-                                <span class="driver-identity-label">Car</span>
-                                <span class="driver-identity-value">${driverData.carTitle}</span>
-                            </div>
-                            <div class="driver-metrics-grid">
-                                <div class="driver-metric-item">
-                                    <span class="driver-metric-label">Position</span>
-                                    <span class="driver-metric-value detail-stat detail-position">${driverData.statusClass === 'crashed' ? 'Crashed' : position}</span>
-                                </div>
-                                <div class="driver-metric-item">
-                                    <span class="driver-metric-label">Progress</span>
-                                    <span class="driver-metric-value detail-stat detail-progress">${driverData.progress.toFixed(2)}%</span>
-                                </div>
-                                <div class="driver-metric-item">
-                                    <span class="driver-metric-label">Skill Gained</span>
-                                    <span class="driver-metric-value detail-skill-gain">${isSelf ? APIManager.raceData.getSkillGainDisplay(State.currentRaceId) : 'N/A'}</span>
-                                </div>
-                                <div class="driver-metric-item">
-                                    <span class="driver-metric-label">Race Time</span>
-                                    <span class="driver-metric-value detail-race-time">N/A</span>
-                                </div>
-                                <div class="driver-metric-item">
-                                    <span class="driver-metric-label">Best Lap</span>
-                                    <span class="driver-metric-value detail-best-lap">N/A</span>
-                                </div>
-                                <div class="driver-metric-item">
-                                    <span class="driver-metric-label">Lap</span>
-                                    <span class="driver-metric-value detail-stat detail-lap">-/-</span>
-                                </div>
-                                <div class="driver-metric-item">
-                                    <span class="driver-metric-label">Lap Progress</span>
-                                    <span class="driver-metric-value detail-stat detail-lap-progress">-%</span>
-                                </div>
-                                <div class="driver-metric-item">
-                                    <span class="driver-metric-label">Calc Speed</span>
-                                    <span class="driver-metric-value"><span class="detail-stat detail-calc-speed">-</span><span class="metric-unit"> mph</span></span>
-                                </div>
-                                <div class="driver-metric-item">
-                                    <span class="driver-metric-label">Calc Accel</span>
-                                    <span class="driver-metric-value"><span class="detail-stat detail-calc-accel">-</span><span class="metric-unit"> g</span></span>
-                                </div>
-                                <div class="driver-metric-item metric-est-lap p-est-lap-time" style="display: none;">
-                                    <span class="driver-metric-label">Est. Lap Time</span>
-                                    <span class="driver-metric-value detail-stat detail-est-lap-time">N/A</span>
-                                </div>
-                            </div>
-                            ${apiStatsHTML}
-                            <div class="driver-details-footer">Source ID: ${driverData.originalId}</div>
-                        </div>`;
-
-                    if (Config.get('fetchApiStatsOnClick') && driverId && !element.hasAttribute('data-stats-loaded') && !APIManager.isFetching.has(driverId)) {
-                        setTimeout(() => APIManager.fetchAndDisplayRacingStats(element, driverId), 50);
-                    }
-                }
-
-                if (detailsVisible) {
-                    const updateDetailStat = (selector, value, placeholder = '-', isLiveData = true) => {
-                        const detailEl = detailsDiv.querySelector(selector);
-                        const usePlaceholder = isLiveData && driverData.statusClass !== 'racing';
-                        if (detailEl) {
-                            detailEl.textContent = usePlaceholder ? placeholder : value;
-                        }
-                    };
-
-                    updateDetailStat('.detail-position', driverData.statusClass === 'crashed' ? 'Crashed' : position, '-', false);
-                    updateDetailStat('.detail-progress', `${driverData.progress.toFixed(2)}%`, '0.00%', false);
-                    const skillGainEl = detailsDiv.querySelector('.detail-skill-gain');
-                    if (skillGainEl && isSelf && driverData.statusClass === 'finished') {
-                        APIManager.raceData.loadSkillGain(State.currentRaceId)
-                            .then(() => {
-                                skillGainEl.textContent = APIManager.raceData.getSkillGainDisplay(State.currentRaceId);
-                                this.hideUnavailableMetricCards(detailsDiv);
-                            })
-                            .catch(() => {
-                                skillGainEl.textContent = 'N/A';
-                                this.hideUnavailableMetricCards(detailsDiv);
-                            });
-                    }
-
-                    if (driverData.statusClass === 'finished') {
-                        APIManager.raceData.loadApiRaceResults(State.currentRaceId)
-                            .then(results => {
-                                const result = results.get(String(driverId));
-                                const raceTime = Number(result?.race_time);
-                                const bestLap = Number(result?.best_lap_time);
-                                const raceTimeEl = detailsDiv.querySelector('.detail-race-time');
-                                const bestLapEl = detailsDiv.querySelector('.detail-best-lap');
-                                if (raceTimeEl) raceTimeEl.textContent = Number.isFinite(raceTime) ? Utils.formatTime(raceTime, true) : 'N/A';
-                                if (bestLapEl) bestLapEl.textContent = Number.isFinite(bestLap) ? Utils.formatTime(bestLap, true) : 'N/A';
-                                this.hideUnavailableMetricCards(detailsDiv);
-                            })
-                            .catch(() => this.hideUnavailableMetricCards(detailsDiv));
-                    }
-
-                    const statusEl = detailsDiv.querySelector('.detail-status');
-                    if (statusEl) statusEl.textContent = driverData.statusClass;
-
-                    const statusSpan = detailsDiv.querySelector('.detail-original-status');
-                    if (statusSpan) {
-                        statusSpan.textContent = (driverData.originalStatusText && !['finished', 'crashed'].includes(driverData.statusClass))
-                            ? `(${driverData.originalStatusText})`
-                            : '';
-                    }
-
-                    if (driverState || driverData.statusClass !== 'racing') {
-                        updateDetailStat('.detail-lap', `${driverState?.currentLap || '-'}/${State.trackInfo.laps || '-'}`, '-/-');
-                        updateDetailStat('.detail-lap-progress', `${driverState?.progressInLap !== undefined ? driverState.progressInLap.toFixed(1) : '-'}%`, '-%');
-                        updateDetailStat('.detail-calc-speed', `${driverState?.lastDisplayedSpeed !== undefined ? driverState.lastDisplayedSpeed.toFixed(1) : '-'}`, '-');
-                        updateDetailStat('.detail-calc-accel', `${driverState?.lastDisplayedAcceleration !== undefined ? driverState.lastDisplayedAcceleration.toFixed(3) : '-'}`, '-');
-
-                        const estLapTimeEl = detailsDiv.querySelector('.detail-est-lap-time');
-                        const estLapParaEl = detailsDiv.querySelector('.p-est-lap-time');
-                        if (estLapTimeEl && estLapParaEl) {
-                            const isRacing = driverData.statusClass === 'racing';
-                            const estLapVisible =
-                                isRacing &&
-                                Config.get('showLapEstimate') &&
-                                driverState?.smoothedLapEstimate !== null &&
-                                isFinite(driverState?.smoothedLapEstimate) &&
-                                State.trackInfo.id &&
-                                driverState?.smoothedLapEstimate > 0;
-
-                            if (estLapVisible) {
-                                estLapTimeEl.textContent = `${Utils.formatTime(driverState.smoothedLapEstimate)} (Raw: ${driverState.rawLapEstimate !== null && isFinite(driverState.rawLapEstimate) ? Utils.formatTime(driverState.rawLapEstimate) : '--:--'})`;
-                                estLapParaEl.style.display = '';
-                            } else {
-                                estLapTimeEl.textContent = 'N/A';
-                                estLapParaEl.style.display = 'none';
-                            }
-                        }
-                    }
-
-                    if (Config.get('fetchApiStatsOnClick') && driverId && !element.hasAttribute('data-stats-loaded') && !APIManager.isFetching.has(driverId)) {
-                        const statsContainer = detailsDiv.querySelector('.api-stats-container');
-                        if (statsContainer && !statsContainer.matches('.loading, .loaded, .error, .no-key')) {
-                            setTimeout(() => APIManager.fetchAndDisplayRacingStats(element, driverId), 50);
-                        }
-                    }
-                    this.hideUnavailableMetricCards(detailsDiv);
-                }
-            }
-
             if (driverState) driverState.statusClass = driverData.statusClass;
         },
         stableUpdateCustomList() {
             if (!Config.get('hideOriginalList')) {
+                if (DriverInspector.root) DriverInspector.close(false);
                 if (State.isInitialized) {
                     State.resetRaceState();
                 }
@@ -3472,6 +3308,7 @@
                 if (allDriversFinished && !State.raceFinished) {
                     State.raceFinished = true;
                     State.finalRaceData = newDriversData;
+                    if (typeof TabWorkspace !== 'undefined') TabWorkspace.invalidateRaceBoundViews();
                     UI.updateControlButtonsVisibility();
                 } else if (allDriversFinished) {
                     // Torn can populate image titles after the result rows first render.
@@ -3484,6 +3321,7 @@
                 }
 
                 this.syncMapSelection();
+                if (DriverInspector.root) DriverInspector.render();
 
                 if (hadFocus && document.body.contains(State.customUIContainer)) {
                     State.customUIContainer.scrollTop = savedScrollTop;
@@ -3494,63 +3332,1503 @@
         }
     };
 
-    const HistoryStore = {
-        dbName: 'TornRacingTelemetry',
-        dbVersion: 1,
-        storeName: 'historyLogEntries',
-        dbPromise: null,
+    // One inspector, outside the leaderboard's scrolling area. The existing race rows
+    // remain compact and still select a racer on Torn's track when tapped.
+    const DriverInspector = {
+        root: null,
+        panel: null,
+        content: null,
+        selectedUserId: null,
+        selectedOriginalId: null,
+        selectedRaceId: null,
+        tab: 'race',
+        returnFocus: null,
+        careerCache: new Map(),
+        careerRequests: new Map(),
+        resultRequests: new Set(),
+        skillGainAttempted: new Set(),
+        resultCache: new Map(),
+        boundKeydown: null,
 
-        isSupported() {
-            return typeof window.indexedDB !== 'undefined';
+        element(tag, className, text) {
+            return Utils.createElement(tag, { className, ...(text === undefined ? {} : { text }) });
         },
-        open() {
-            if (!this.isSupported()) {
-                return Promise.reject(new Error('IndexedDB is not available in this environment.'));
+        open(userId, originalId, trigger = null) {
+            if (!userId || !originalId) return;
+            const raceId = String(State.currentRaceId || '');
+            const newDriver = this.selectedUserId !== String(userId) || this.selectedRaceId !== raceId;
+            if (newDriver) this.tab = 'race';
+            if (!this.root) this.mount();
+            this.returnFocus = trigger || document.activeElement;
+            this.selectedUserId = String(userId);
+            this.selectedOriginalId = originalId;
+            this.selectedRaceId = raceId;
+            this.root.hidden = false;
+            document.body.classList.add('rtt-inspector-open');
+            this.render();
+            this.panel.querySelector('.rtt-inspector-close')?.focus();
+        },
+        close(restoreFocus = true) {
+            if (!this.root) return;
+            this.root.remove();
+            this.root = null;
+            this.panel = null;
+            this.content = null;
+            document.body.classList.remove('rtt-inspector-open');
+            document.removeEventListener('keydown', this.boundKeydown);
+            this.boundKeydown = null;
+            this.selectedUserId = null;
+            this.selectedOriginalId = null;
+            this.selectedRaceId = null;
+            if (restoreFocus && this.returnFocus?.isConnected) this.returnFocus.focus();
+            this.returnFocus = null;
+        },
+        mount() {
+            const backdrop = this.element('div', 'rtt-inspector-backdrop');
+            const panel = this.element('section', 'rtt-inspector-panel');
+            panel.setAttribute('role', 'dialog');
+            panel.setAttribute('aria-modal', 'true');
+            panel.setAttribute('aria-label', 'Racing driver details');
+            panel.setAttribute('tabindex', '-1');
+
+            const grip = this.element('div', 'rtt-inspector-grip');
+            grip.setAttribute('aria-hidden', 'true');
+            const head = this.element('header', 'rtt-inspector-header');
+            const identity = this.element('div', 'rtt-inspector-identity');
+            identity.append(this.element('span', 'rtt-inspector-eyebrow', 'DRIVER INSPECTOR'));
+            identity.append(this.element('div', 'rtt-inspector-name', 'Driver'));
+            identity.append(this.element('p', 'rtt-inspector-subtitle', 'Race data'));
+            const expand = this.element('button', 'rtt-inspector-expand', 'Expand');
+            expand.type = 'button';
+            expand.setAttribute('aria-label', 'Expand driver details');
+            expand.setAttribute('aria-expanded', 'false');
+            expand.addEventListener('click', () => {
+                const isExpanded = panel.classList.toggle('is-expanded');
+                expand.textContent = isExpanded ? 'Compact' : 'Expand';
+                expand.setAttribute('aria-label', isExpanded ? 'Collapse driver details' : 'Expand driver details');
+                expand.setAttribute('aria-expanded', String(isExpanded));
+            });
+            const close = this.element('button', 'rtt-inspector-close', '×');
+            close.type = 'button';
+            close.setAttribute('aria-label', 'Close driver details');
+            close.addEventListener('click', () => this.close());
+            const headerActions = this.element('div', 'rtt-inspector-actions');
+            headerActions.append(expand, close);
+            head.append(identity, headerActions);
+
+            const tabs = this.element('div', 'rtt-inspector-tabs');
+            tabs.setAttribute('role', 'tablist');
+            tabs.setAttribute('aria-label', 'Driver details sections');
+            for (const [key, title] of [['race', 'Race'], ['telemetry', 'Telemetry'], ['career', 'Career']]) {
+                const button = this.element('button', 'rtt-inspector-tab', title);
+                button.type = 'button';
+                button.dataset.tab = key;
+                button.setAttribute('role', 'tab');
+                button.addEventListener('click', () => {
+                    this.tab = key;
+                    this.render();
+                });
+                tabs.append(button);
             }
-            if (this.dbPromise) {
-                return this.dbPromise;
+            const content = this.element('div', 'rtt-inspector-content');
+            content.setAttribute('role', 'tabpanel');
+            content.setAttribute('aria-live', 'off');
+            const footer = this.element('footer', 'rtt-inspector-footer', 'Calculated values are estimates based on Torn race progress.');
+            panel.append(grip, head, tabs, content, footer);
+            backdrop.append(panel);
+            backdrop.addEventListener('click', event => { if (event.target === backdrop) this.close(); });
+            this.boundKeydown = event => {
+                if (event.key === 'Escape') { event.preventDefault(); this.close(); return; }
+                if (event.key !== 'Tab') return;
+                const focusable = [...this.panel.querySelectorAll('button:not([disabled]), a[href]')];
+                if (!focusable.length) return;
+                const first = focusable[0];
+                const last = focusable[focusable.length - 1];
+                if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+                else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+            };
+            document.addEventListener('keydown', this.boundKeydown);
+            document.body.append(backdrop);
+            this.root = backdrop;
+            this.panel = panel;
+            this.content = content;
+        },
+        driverData() {
+            const row = document.getElementById(this.selectedOriginalId);
+            if (!row || !State.originalLeaderboard?.contains(row)) return null;
+            return RaceManager.parseDriverData(row);
+        },
+        metric(label, value, note = '', prominent = false) {
+            const card = this.element('div', `rtt-inspector-metric${prominent ? ' is-prominent' : ''}`);
+            card.append(this.element('span', 'rtt-inspector-metric-label', label));
+            card.append(this.element('strong', 'rtt-inspector-metric-value', String(value)));
+            if (note) card.append(this.element('span', 'rtt-inspector-metric-note', note));
+            return card;
+        },
+        info(text) { return this.element('p', 'rtt-inspector-info', text); },
+        grid(items) {
+            const grid = this.element('div', 'rtt-inspector-grid');
+            grid.append(...items);
+            return grid;
+        },
+        progress(label, percent) {
+            const wrapper = this.element('div', 'rtt-inspector-progress');
+            const heading = this.element('div', 'rtt-inspector-progress-heading');
+            const bounded = Math.max(0, Math.min(100, Number(percent) || 0));
+            heading.append(this.element('span', '', label), this.element('strong', '', `${bounded.toFixed(1)}%`));
+            const track = this.element('div', 'rtt-inspector-progress-track');
+            const fill = this.element('div', 'rtt-inspector-progress-fill');
+            fill.style.width = `${bounded}%`;
+            track.setAttribute('role', 'progressbar');
+            track.setAttribute('aria-label', label);
+            track.setAttribute('aria-valuemin', '0');
+            track.setAttribute('aria-valuemax', '100');
+            track.setAttribute('aria-valuenow', String(Math.round(bounded)));
+            track.append(fill);
+            wrapper.append(heading, track);
+            return wrapper;
+        },
+        render() {
+            if (!this.root) return;
+            const driver = this.driverData();
+            if (!driver || String(driver.userId) !== this.selectedUserId || String(State.currentRaceId || '') !== this.selectedRaceId) {
+                this.close(false);
+                return;
             }
+            this.panel.querySelector('.rtt-inspector-name').textContent = driver.name;
+            this.panel.querySelector('.rtt-inspector-subtitle').textContent = `${driver.carTitle || 'Unknown car'} · ${driver.statusClass === 'ready' ? 'Waiting for start' : driver.statusClass === 'racing' ? 'Racing' : driver.statusClass === 'finished' ? 'Finished' : driver.statusClass === 'crashed' ? 'Crashed' : 'Status unknown'}`;
+            this.panel.querySelector('.rtt-inspector-eyebrow').textContent = `RACE ${this.selectedRaceId || '—'}  /  DRIVER DETAILS`;
+            this.panel.querySelectorAll('.rtt-inspector-tab').forEach(button => {
+                const selected = button.dataset.tab === this.tab;
+                button.setAttribute('aria-selected', String(selected));
+                button.tabIndex = selected ? 0 : -1;
+            });
+            const scrollTop = this.content.scrollTop;
+            this.content.replaceChildren(this.tab === 'race' ? this.raceContent(driver) : this.tab === 'telemetry' ? this.telemetryContent(driver) : this.careerContent(driver));
+            this.content.scrollTop = scrollTop;
+        },
+        raceContent(driver) {
+            const wrapper = this.element('div', 'rtt-inspector-section');
+            const row = document.getElementById(this.selectedOriginalId);
+            const position = row ? [...State.originalLeaderboard.children].indexOf(row) + 1 : 0;
+            const raceResult = this.resultCache.get(`${this.selectedRaceId}:${this.selectedUserId}`);
+            const raceTime = Number(raceResult?.race_time);
+            const bestLap = Number(raceResult?.best_lap_time);
+            const isFinished = driver.statusClass === 'finished';
+            const isReady = driver.statusClass === 'ready';
+            const metricTime = isFinished && Number.isFinite(raceTime) && raceTime > 0 && raceResult?.race_time != null
+                ? Utils.formatTime(raceTime, true)
+                : isFinished ? driver.originalStatusText : isReady ? 'Not started' : 'In progress';
+            const laps = Math.max(1, Number(State.trackInfo.laps) || 1);
+            const currentLap = isReady ? 0 : isFinished ? laps : Math.min(laps, Math.floor(driver.progress / (100 / laps)) + 1);
+            const summary = this.element('div', 'rtt-inspector-summary');
+            summary.append(this.element('div', 'rtt-inspector-summary-overline', 'CURRENT RACE'));
+            summary.append(this.element('div', 'rtt-inspector-summary-title', State.trackInfo.name || 'Track not available'));
+            summary.append(this.element('div', 'rtt-inspector-summary-sub', `${laps} laps · ${driver.statusClass === 'crashed' ? 'Crashed' : driver.statusClass === 'finished' ? 'Finished' : driver.statusClass === 'ready' ? 'Waiting to start' : 'On track'}`));
+            wrapper.append(summary);
+            if (isReady) {
+                wrapper.append(this.grid([
+                    this.metric('Starting grid', position > 0 ? `P${position}` : '—', 'Current line-up', true),
+                    this.metric('Laps completed', `0 / ${laps}`)
+                ]));
+                wrapper.append(this.info('Waiting for Torn to start the race. Live positions, speed and lap timing are not available yet.'));
+                return wrapper;
+            }
+            wrapper.append(this.grid([
+                this.metric(isReady ? 'Starting grid' : 'Position', position > 0 ? `P${position}` : '—', isReady ? 'Line-up order, not a live position' : 'Live race order', true),
+                this.metric('Race time', driver.statusClass === 'crashed' ? 'Crashed' : metricTime),
+                this.metric('Current lap', `${currentLap} / ${laps}`),
+                this.metric('Best lap', isFinished && raceResult?.best_lap_time != null && Number.isFinite(bestLap) ? Utils.formatTime(bestLap, true) : '—', 'Official race result')
+            ]));
+            if (driver.statusClass === 'racing') wrapper.append(this.progress('Race completed', driver.progress));
+            if (isFinished && !raceResult && Utils.isApiKeyAvailable()) this.requestRaceResult();
+            if (isFinished && driver.userId === State.userId) {
+                const gain = APIManager.raceData.getSkillGainDisplay(this.selectedRaceId);
+                wrapper.append(this.info(`Racing skill gained: ${gain}`));
+                if (gain === 'N/A' && Utils.isApiKeyAvailable()) this.requestSkillGain();
+            }
+            return wrapper;
+        },
+        telemetryContent(driver) {
+            const wrapper = this.element('div', 'rtt-inspector-section');
+            const state = State.previousMetrics[driver.userId];
+            const live = driver.statusClass === 'racing';
+            const unit = Config.get('speedUnit') === 'kmh' ? 'km/h' : 'mph';
+            const speed = live && state && Number.isFinite(state.reportedSpeed)
+                ? `${Utils.convertSpeed(state.reportedSpeed, Config.get('speedUnit')).toFixed(1)} ${unit}` : '—';
+            const acceleration = live && state && Number.isFinite(state.acceleration) ? `${state.acceleration.toFixed(2)} g` : '—';
+            const currentLap = state?.currentLap || 1;
+            const laps = Math.max(1, Number(State.trackInfo.laps) || 1);
+            wrapper.append(this.element('h3', 'rtt-inspector-section-title', 'Live estimates'));
+            if (!live) {
+                wrapper.append(this.info(driver.statusClass === 'ready'
+                    ? 'The race has not started. Live speed, acceleration and lap estimates will appear when progress begins.'
+                    : 'Live telemetry is only available during racing.'));
+                return wrapper;
+            }
+            wrapper.append(this.grid([
+                this.metric('Speed · estimated', speed, 'From progress changes', true),
+                this.metric('Acceleration · estimated', acceleration, 'Smoothed from speed'),
+                this.metric('Lap', live ? `${currentLap} / ${laps}` : '—'),
+                this.metric('To lap finish · est.', live && Number.isFinite(state?.smoothedLapEstimate) && state.smoothedLapEstimate > 0 ? Utils.formatTime(state.smoothedLapEstimate) : '—', 'Time remaining, not full lap')
+            ]));
+            if (live) {
+                const lapProgress = live && state ? state.progressInLap : ((driver.progress % (100 / laps)) / (100 / laps)) * 100;
+                wrapper.append(this.progress('Whole race', driver.progress), this.progress('Current lap', lapProgress));
+            }
+            if (state?.wasStale) wrapper.append(this.info('Progress updates paused. Current speed is an estimate and may be stale.'));
+            else wrapper.append(this.info('Torn does not expose vehicle sensors here. Speed and acceleration are estimates from race progress; they may lag during network delays.'));
+            return wrapper;
+        },
+        careerContent(driver) {
+            const wrapper = this.element('div', 'rtt-inspector-section');
+            wrapper.append(this.element('h3', 'rtt-inspector-section-title', 'Driver career'));
+            if (!Utils.isApiKeyAvailable()) {
+                wrapper.append(this.info('Add a Torn API key in Settings to view career statistics. Live race data does not require a key.'));
+                return wrapper;
+            }
+            const cached = this.careerCache.get(driver.userId);
+            if (!cached || Date.now() - cached.when > 2 * 60 * 1000) {
+                wrapper.append(this.info('Loading driver statistics from the Torn API…'));
+                this.requestCareer(driver.userId);
+                return wrapper;
+            }
+            if (cached.error) {
+                wrapper.append(this.info(`Career stats unavailable: ${cached.error}`));
+                const retry = this.element('button', 'rtt-inspector-retry', 'Try again');
+                retry.type = 'button';
+                retry.addEventListener('click', () => { this.careerCache.delete(driver.userId); this.render(); });
+                wrapper.append(retry);
+                return wrapper;
+            }
+            const stats = cached.stats;
+            const entered = Number(stats?.races?.entered);
+            const won = Number(stats?.races?.won);
+            const rate = Number.isFinite(entered) && entered > 0 && Number.isFinite(won) ? `${((won / entered) * 100).toFixed(1)}%` : '—';
+            const value = number => number == null || !Number.isFinite(Number(number)) ? '—' : Number(number).toLocaleString();
+            wrapper.append(this.grid([
+                this.metric('Racing skill', value(stats?.skill), '', true),
+                this.metric('Racing points', value(stats?.points)),
+                this.metric('Races entered', value(stats?.races?.entered)),
+                this.metric('Wins', value(stats?.races?.won)),
+                this.metric('Career win rate', rate, 'Wins / races entered')
+            ]));
+            const link = this.element('a', 'rtt-inspector-profile', 'View Torn profile ↗');
+            link.href = `https://www.torn.com/profiles.php?XID=${encodeURIComponent(driver.userId)}`;
+            link.target = '_blank';
+            link.rel = 'noopener noreferrer';
+            wrapper.append(link);
+            return wrapper;
+        },
+        requestCareer(userId) {
+            if (this.careerRequests.has(userId)) return;
+            const request = APIManager.fetchWithAuthHeader(`https://api.torn.com/v2/user?selections=personalstats&id=${encodeURIComponent(userId)}&cat=racing`, Config.get('apiKey'))
+                .then(data => {
+                    const stats = data?.personalstats?.racing;
+                    if (!stats || typeof stats !== 'object') throw new Error('The API returned no racing statistics.');
+                    this.careerCache.set(userId, { stats, when: Date.now() });
+                })
+                .catch(error => { this.careerCache.set(userId, { error: error.message, when: Date.now() }); })
+                .finally(() => { this.careerRequests.delete(userId); if (this.selectedUserId === userId && this.tab === 'career') this.render(); });
+            this.careerRequests.set(userId, request);
+        },
+        requestRaceResult() {
+            const raceId = this.selectedRaceId;
+            const driverId = this.selectedUserId;
+            const key = `${raceId}:${driverId}`;
+            if (!raceId || this.resultRequests.has(key)) return;
+            this.resultRequests.add(key);
+            APIManager.raceData.loadApiRaceResults(raceId)
+                .then(results => { this.resultCache.set(key, results.get(driverId) || {}); })
+                .catch(() => { this.resultCache.set(key, {}); })
+                .finally(() => {
+                    this.resultRequests.delete(key);
+                    if (this.selectedRaceId === raceId && this.selectedUserId === driverId && this.tab === 'race') this.render();
+                });
+        },
+        requestSkillGain() {
+            const raceId = this.selectedRaceId;
+            if (!raceId || this.skillGainAttempted.has(raceId)) return;
+            this.skillGainAttempted.add(raceId);
+            this.resultRequests.add(`gain:${raceId}`);
+            APIManager.raceData.loadSkillGain(raceId)
+                .catch(() => null)
+                .finally(() => {
+                    this.resultRequests.delete(`gain:${raceId}`);
+                    if (this.selectedRaceId === raceId && this.tab === 'race' && this.root) this.render();
+                });
+        }
+    };
 
-            this.dbPromise = new Promise((resolve, reject) => {
-                const request = window.indexedDB.open(this.dbName, this.dbVersion);
-
-                request.onupgradeneeded = () => {
-                    const db = request.result;
-                    const store = db.objectStoreNames.contains(this.storeName)
-                        ? request.transaction.objectStore(this.storeName)
-                        : db.createObjectStore(this.storeName, { keyPath: 'id', autoIncrement: true });
-
-                    if (!store.indexNames.contains('timestamp')) {
-                        store.createIndex('timestamp', 'timestamp');
+    // Consolidate Torn's post-race information and live Current car card into menu sheets.
+    // Keep native content mounted for Torn handlers; hide it only after reliable capture.
+    const RaceInfoIntegration = {
+        observer: null,
+        root: null,
+        panel: null,
+        closeKeyHandler: null,
+        frame: null,
+        restoreFocus: null,
+        styleInstalled: false,
+        actionUrls: {
+            changeCar: 'https://www.torn.com/page.php?sid=racing&tab=cars&section=changeRacingCar',
+            leaveRace: 'https://www.torn.com/page.php?sid=racing&tab=customrace&section=leaveCurrentRace&step=leaveCurrentRace'
+        },
+        resolveActionUrl(label, fallbackHref = '') {
+            if (/leave/i.test(label)) return this.actionUrls.leaveRace;
+            if (/change\s+car/i.test(label)) return this.actionUrls.changeCar;
+            return fallbackHref || '';
+        },
+        labels: {
+            'ID': 'Race ID', 'Name': 'Name', 'Type': 'Type', 'Time created': 'Created',
+            'Time started': 'Started', 'Time ended': 'Finished', 'Track': 'Track',
+            'Laps': 'Laps', 'Participants': 'Participants', 'Drivers required': 'Minimum drivers',
+            'Maximum Drivers': 'Maximum drivers', 'Cars allowed': 'Cars allowed',
+            'Upgrades allowed': 'Upgrades allowed', 'Bet amount': 'Bet amount'
+        },
+        readNative(root = document) {
+            const wrap = root.querySelector('.car-selected-wrap');
+            const card = wrap?.querySelector(':scope > .car-selected');
+            if (!card || card.querySelector('.title-black')?.textContent?.trim().toLowerCase() !== 'race info') {
+                return null;
+            }
+            const fields = [];
+            for (const node of card.querySelectorAll('.properties-wrap > li .properties > .title')) {
+                const match = node.textContent.trim().match(/^([^:]+):\s*(.*)$/s);
+                if (!match) continue;
+                const label = this.labels[match[1].trim()];
+                const value = match[2].trim();
+                if (label && value) fields.push({ label, value });
+            }
+            // Don't remove Torn's panel unless enough information was actually captured.
+            if (fields.length < 3 || !fields.some(field => field.label === 'Race ID')) return null;
+            return { wrap, fields };
+        },
+        isRaceFinished(root = document) {
+            if (typeof State !== 'undefined' && State.raceFinished) return true;
+            const status = root?.querySelector?.('#infoSpot')?.textContent?.trim() || '';
+            if (/race\s+finished/i.test(status)) return true;
+            const card = root?.querySelector?.('.car-selected-wrap > .car-selected');
+            const title = card?.querySelector?.('.title-black')?.textContent?.trim().toLowerCase();
+            if (title === 'race info') return true;
+            // Torn hides these actions when the race ends, before replacing the car card.
+            return title === 'current car' && card.querySelector?.('.model-wrap .link-wrap')?.style?.display === 'none';
+        },
+        readCar(root = document) {
+            const wrap = root.querySelector('.car-selected-wrap');
+            const card = wrap?.querySelector(':scope > .car-selected');
+            if (!card || card.querySelector('.title-black')?.textContent?.trim().toLowerCase() !== 'current car') return null;
+            // When a race finishes in-place via WebSocket, Torn keeps the old Current car DOM
+            // node until a page refresh, but hides .link-wrap (display: none) and sets
+            // #infoSpot to "Race finished". Hide the Car tab once the race has finished.
+            if (this.isRaceFinished(root)) return null;
+            const image = card.querySelector('.model-wrap .img img');
+            const model = card.querySelector('.model-wrap .model');
+            const lines = [...(model?.querySelectorAll?.('p') || [])].map(node => node.textContent.trim()).filter(Boolean);
+            const stats = [];
+            for (const row of card.querySelectorAll('.properties-wrap > li')) {
+                const name = row.querySelector?.('.properties > .title')?.textContent?.trim();
+                const bar = row.querySelector?.('.properties .bar-tpl-wrap');
+                const track = row.querySelector?.('.progressbar-bg');
+                const totalBar = track?.querySelector(':scope > .progressbar');
+                const originalBar = totalBar?.querySelector(':scope > .progressbar');
+                const tooltip = row.querySelector?.('.progressbar-wrap')?.getAttribute('title')?.trim() || '';
+                if (!name || !totalBar) continue;
+                const percent = Number.parseFloat(totalBar.style.width);
+                const baseline = Number.parseFloat(originalBar?.style?.width);
+                stats.push({
+                    name, tooltip,
+                    percent: Number.isFinite(percent) ? Math.max(0, Math.min(100, percent)) : 0,
+                    baseline: Number.isFinite(baseline) ? Math.max(0, Math.min(100, baseline)) : 0,
+                    negative: Boolean(bar?.classList.contains('negative'))
+                });
+            }
+            // Do not hide actionable Torn content until a useful car view is available.
+            if (!lines[0] || !image || stats.length < 3) return null;
+            const linkWrap = card.querySelector?.('.model-wrap .link-wrap');
+            const linksHidden = linkWrap?.style?.display === 'none';
+            const links = linksHidden ? [] : [...card.querySelectorAll('.model-wrap .link-wrap a[href]')]
+                .filter(anchor => /leave this race|change car/i.test(anchor.textContent.trim()))
+                .map(anchor => ({ anchor, label: anchor.textContent.trim() }));
+            return { wrap, name: lines[0], category: lines.slice(1).join(' · '), imageSrc: image.getAttribute('src'), imageAlt: image.getAttribute('alt') || lines[0], stats, links };
+        },
+        readLive(root = document) {
+            const title = root.querySelector('.drivers-list > .title-black')?.textContent?.trim() || '';
+            const trackName = title.split(/\s+-\s+\d+\s+laps\b/i)[0].trim();
+            const laps = title.match(/\b(\d+)\s+laps\b/i)?.[1];
+            const raceId = typeof RaceManager !== 'undefined' ? RaceManager.getRaceId() : null;
+            const status = root.querySelector('#infoSpot')?.textContent?.trim();
+            const entrants = root.querySelectorAll('#leaderBoard > li').length;
+            const length = root.querySelector('.track-info')?.getAttribute('data-length');
+            const fields = [];
+            if (raceId) fields.push({ label: 'Race ID', value: String(raceId) });
+            if (trackName) fields.push({ label: 'Track', value: trackName });
+            if (laps) fields.push({ label: 'Laps', value: laps });
+            if (entrants) fields.push({ label: 'Participants', value: String(entrants) });
+            if (length) fields.push({ label: 'Track length', value: length });
+            if (status) fields.push({ label: 'Status', value: status });
+            return fields;
+        },
+        readTrack(root = document) {
+            // Torn provides a track-specific description in the native map info icon,
+            // even before the race starts. Read it live rather than caching a track.
+            const node = root.querySelector('.drivers-list .track-info');
+            if (!node) return null;
+            const name = node.getAttribute('title')?.trim() || '';
+            const length = node.getAttribute('data-length')?.trim() || '';
+            const description = node.getAttribute('data-desc')?.trim() || '';
+            return { name, length, description };
+        },
+        getFields(root = document) {
+            const native = this.readNative(root);
+            const fields = native ? [...native.fields] : this.readLive(root);
+            const track = this.readTrack(root);
+            if (track) {
+                if (track.name && !fields.some(item => item.label === 'Track'))
+                    fields.unshift({ label: 'Track', value: track.name });
+                if (track.length && !fields.some(item => item.label === 'Track length'))
+                    fields.push({ label: 'Track length', value: track.length });
+                if (track.description)
+                    fields.push({ label: 'Track description', value: track.description });
+            }
+            return fields;
+        },
+        sync() {
+            if (!this.root || !this.root.isConnected) return;
+            const native = this.readNative(this.root);
+            const car = this.readCar(this.root);
+            const wrap = this.root.querySelector('.car-selected-wrap');
+            const canOpenRace = typeof LiveMapIntegration !== 'undefined' && LiveMapIntegration.hasInfoButton();
+            const carButton = State.controlsContainer?.querySelector('.telemetry-car-button');
+            if (carButton) {
+                carButton.style.display = car ? 'inline-block' : 'none';
+                carButton.setAttribute('aria-hidden', car ? 'false' : 'true');
+            }
+            // Suppress Torn's card when its replacement menu is available, or when a race has
+            // finished in-place and Torn hasn't swapped the stale .car-selected card yet.
+            const finishedStaleCar = !native && !car && this.isRaceFinished(this.root)
+                && wrap?.querySelector?.(':scope > .car-selected .title-black')?.textContent?.trim().toLowerCase() === 'current car';
+            if (wrap) wrap.classList.toggle('rtt-race-info-integrated', Boolean((native && canOpenRace) || (car && carButton) || (finishedStaleCar && canOpenRace)));
+            if (typeof LiveMapIntegration !== 'undefined') LiveMapIntegration.sync();
+            if (typeof TabWorkspace !== 'undefined') { TabWorkspace.refreshVisibility(); TabWorkspace.refreshCar(); }
+        },
+        install() {
+            this.disconnect();
+            this.root = document.getElementById('racingupdates');
+            if (!this.root) return;
+            if (!this.styleInstalled) {
+                GM_addStyle(`
+                    .rtt-race-info-integrated > .car-selected { display: none !important; }
+                    .rtt-race-info-integrated > hr.delimiter-999 { display: none !important; }
+                    .rtt-race-info-integrated > .drivers-list {
+                        float: none !important; width: 100% !important; max-width: 100% !important;
+                        margin: 0 !important; box-sizing: border-box;
                     }
-                };
-
-                request.onsuccess = () => {
-                    const db = request.result;
-                    db.onversionchange = () => {
-                        db.close();
-                        this.dbPromise = null;
-                    };
-                    resolve(db);
-                };
-
-                request.onerror = () => {
-                    this.dbPromise = null;
-                    reject(request.error || new Error('Failed to open IndexedDB.'));
-                };
+                    #telemetryControlsContainer > .telemetry-car-button {
+                        box-sizing: border-box; flex: 1 1 0 !important; min-width: 0 !important;
+                        max-width: none !important; width: 0; min-height: 34px;
+                        padding: 6px 2px; margin: 0; border: 1px solid transparent;
+                        border-radius: 6px; background: transparent; box-shadow: none;
+                        color: #9aafbd; text-align: center; white-space: nowrap;
+                        font: 500 11px/1.25 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+                        -webkit-tap-highlight-color: transparent; transition: none;
+                    }
+                    #telemetryControlsContainer > .telemetry-car-button:focus-visible { outline: 2px solid #83b9dc; outline-offset: 1px; }
+                    @media (hover: hover) and (pointer: fine) {
+                        #telemetryControlsContainer > .telemetry-car-button:hover { color: #e2eff8; background: #293744; border-color: #405260; }
+                    }
+                    @media (hover: none), (pointer: coarse) {
+                        #telemetryControlsContainer > .telemetry-car-button:hover,
+                        #telemetryControlsContainer > .telemetry-car-button:active { color: #9aafbd; background: transparent; box-shadow: none; }
+                    }
+                    .rtt-race-info-content { width: min(100%, 580px); }
+                    .rtt-car-heading { display: flex; align-items: center; gap: 12px; padding: 12px;
+                        border: 1px solid #354958; border-radius: 11px; background: #202b36; margin-bottom: 12px; }
+                    .rtt-car-image { display: block; width: 100px; height: 55px; object-fit: contain; flex: 0 0 100px; }
+                    .rtt-car-name { font-size: 17px; font-weight: 700; color: #ecf4fa; line-height: 1.25; }
+                    .rtt-car-category { margin-top: 4px; font-size: 12px; color: #9cb3c3; }
+                    .rtt-car-stat { margin-bottom: 12px; }
+                    .rtt-car-stat-top { display: flex; align-items: baseline; justify-content: space-between;
+                        gap: 8px; margin-bottom: 5px; font-size: 12px; color: #dbe8f2; }
+                    .rtt-car-stat-top strong { text-align: right; font-size: 11px; font-weight: 600; color: #bed4e2; }
+                    .rtt-car-track { position: relative; height: 9px; border-radius: 6px; overflow: hidden;
+                        background: #101923; border: 1px solid #3a4754; }
+                    .rtt-car-track > .rtt-car-total { position: absolute; inset: 0 auto 0 0;
+                        background: #6db579; border-radius: 5px; }
+                    .rtt-car-track.negative > .rtt-car-total { background: #cf6863; }
+                    .rtt-car-track > .rtt-car-baseline { position: absolute; top: 0; bottom: 0; left: 0;
+                        background: rgba(226, 238, 247, .52); border-right: 1px solid #f0f7fa; }
+                    .rtt-car-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+                    .rtt-car-actions > a.rtt-car-action { display: inline-flex; align-items: center; justify-content: center;
+                        min-height: 42px; flex: 1 1 135px; box-sizing: border-box; padding: 9px 12px;
+                        border: 1px solid #476074; border-radius: 9px; background: #283c4b;
+                        text-decoration: none !important; color: #e6f4fd !important;
+                        text-align: center; font: 600 12px/1.35 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+                    .rtt-car-actions > a.rtt-car-action.leave,
+                    .rtt-car-actions > button.rtt-car-action.leave { border-color: #765254; background: #462c30; color: #ffe2df !important; }
+                    .rtt-car-actions > button.rtt-car-action { display: inline-flex; align-items: center; justify-content: center;
+                        min-height: 42px; flex: 1 1 135px; box-sizing: border-box; padding: 9px 12px;
+                        border: 1px solid #476074; border-radius: 9px; background: #283c4b; cursor: pointer;
+                        color: #e6f4fd !important; text-align: center;
+                        font: 600 12px/1.35 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+                    .rtt-confirm-message { margin: 0 0 14px; font-size: 13px; line-height: 1.55; color: #dbe8f2; }
+                    .rtt-car-action:focus-visible { outline: 2px solid #95caee; outline-offset: 2px; }
+                    @media (hover: hover) and (pointer: fine) {
+                        .rtt-car-action:hover { filter: brightness(1.14); }
+                    }
+                    @media (hover: none), (pointer: coarse) {
+                        .rtt-car-action:hover, .rtt-car-action:active { filter: none; }
+                    }
+                    .rtt-race-info-intro { font-size: 12px; color: #a6bac9; margin: 0 0 13px; }
+                    .rtt-race-info-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+                    .rtt-race-info-cell { min-width: 0; padding: 10px 12px; background: #202b36; border: 1px solid #354958; border-radius: 9px; }
+                    .rtt-race-info-key { display: block; color: #9db2c2; font-size: 10px; line-height: 1.4; }
+                    .rtt-race-info-value { display: block; color: #edf4fa; font-size: 13px; line-height: 1.4; font-weight: 650; overflow-wrap: anywhere; margin-top: 3px; }
+                    .rtt-race-info-cell.wide { grid-column: 1 / -1; }
+                    .rtt-race-info-cell.track-description { padding: 13px 14px; background: #1b303e; }
+                    .rtt-race-info-cell.track-description .rtt-race-info-value {
+                        font-size: 13px; line-height: 1.6; font-weight: 400;
+                        color: #d8e6f0; overflow-wrap: break-word;
+                    }
+                    @media (max-width: 600px) {
+                        .rtt-race-info-grid { gap: 6px; }
+                        .rtt-race-info-cell { padding: 9px 10px; }
+                        .rtt-race-info-value { font-size: 12px; }
+                    }
+                `);
+                this.styleInstalled = true;
+            }
+            this.sync();
+            // Torn swaps the entire race-details block when a race finishes.
+            this.observer = new MutationObserver(() => {
+                if (this.frame !== null) return;
+                this.frame = requestAnimationFrame(() => { this.frame = null; this.sync(); });
             });
-
-            return this.dbPromise;
+            this.observer.observe(this.root, { childList: true, subtree: true, attributes: true, characterData: true, attributeFilter: ['style', 'class'] });
         },
-        async clearEntries() {
-            const db = await this.open();
-            return new Promise((resolve, reject) => {
-                const tx = db.transaction(this.storeName, 'readwrite');
-                tx.objectStore(this.storeName).clear();
-                tx.oncomplete = () => resolve();
-                tx.onabort = () => reject(tx.error || new Error('History clear transaction aborted.'));
-                tx.onerror = () => reject(tx.error || new Error('Failed to clear history entries.'));
+        executeConfirmedAction(action) {
+            if (!action) return;
+            const label = action.label || '';
+            const liveCar = this.readCar();
+            const liveAnchor = liveCar?.links?.find(item => item.label.toLowerCase() === label.toLowerCase())?.anchor
+                || (action.anchor?.isConnected ? action.anchor : null);
+
+            if (liveAnchor) {
+                // Temporarily remove 'need-confirmation' from Torn's native anchor inside
+                // #racingMainContainer so Torn's delegated .btn-action-tab AJAX handler
+                // executes the XHR action (with rfcv token) immediately instead of asking
+                // for confirmation inside the hidden .car-selected card.
+                const hadConfirmation = liveAnchor.classList?.contains?.('need-confirmation');
+                if (hadConfirmation) liveAnchor.classList.remove('need-confirmation');
+                try {
+                    const $ = typeof window !== 'undefined' ? (window.jQuery || window.$) : null;
+                    if ($?.fn?.jquery) {
+                        $(liveAnchor).trigger('click');
+                    } else {
+                        liveAnchor.click();
+                    }
+                } finally {
+                    if (hadConfirmation && liveAnchor.isConnected) {
+                        setTimeout(() => liveAnchor.classList?.add?.('need-confirmation'), 0);
+                    }
+                }
+                return;
+            }
+
+            // Fallback if native anchor is no longer in the DOM: inject a temporary
+            // .btn-action-tab anchor inside #racingMainContainer and trigger it.
+            const targetUrl = this.resolveActionUrl(label, action.anchor?.href);
+            const relativeHref = targetUrl.replace(/^https?:\/\/[^/]+/i, '');
+            const container = document.getElementById('racingMainContainer') || this.root || document.body;
+            if (container && relativeHref) {
+                const tempAnchor = document.createElement('a');
+                tempAnchor.className = 'link btn-action-tab';
+                tempAnchor.href = relativeHref;
+                tempAnchor.style.display = 'none';
+                container.append(tempAnchor);
+                try {
+                    const $ = typeof window !== 'undefined' ? (window.jQuery || window.$) : null;
+                    if ($?.fn?.jquery) {
+                        $(tempAnchor).trigger('click');
+                    } else {
+                        tempAnchor.click();
+                    }
+                } finally {
+                    setTimeout(() => tempAnchor.remove(), 0);
+                }
+            }
+        },
+        confirmAction(action, trigger = null) {
+            if (!action) return;
+            const isLeave = /leave/i.test(action.label);
+            const targetUrl = this.resolveActionUrl(action.label, action.anchor?.href);
+            // In synthetic unit tests where document.body is not mounted, execute immediately.
+            if (typeof document === 'undefined' || !document.body?.append) {
+                this.executeConfirmedAction(action);
+                return;
+            }
+            this.close();
+            const popup = document.createElement('div');
+            popup.className = 'info-panel rtt-race-info-panel rtt-confirm-panel';
+            popup.setAttribute('role', 'presentation');
+            const content = document.createElement('div');
+            content.className = 'info-panel-content rtt-race-info-content';
+            content.setAttribute('role', 'dialog');
+            content.setAttribute('aria-modal', 'true');
+            const title = document.createElement('div');
+            title.className = 'info-title';
+            title.textContent = isLeave ? 'Leave this race?' : 'Change car?';
+            title.id = 'rtt-confirm-action-title';
+            content.setAttribute('aria-labelledby', title.id);
+            const close = document.createElement('button');
+            close.className = 'info-close';
+            close.type = 'button';
+            close.textContent = '×';
+            close.setAttribute('aria-label', 'Cancel');
+            close.addEventListener('click', () => this.close());
+            title.append(close);
+
+            const body = document.createElement('div');
+            body.className = 'info-content';
+            const msg = document.createElement('p');
+            msg.className = 'rtt-confirm-message';
+            msg.textContent = isLeave
+                ? 'Are you sure you want to leave your current race?'
+                : 'Are you sure you want to leave the track view and change your racing car?';
+            const actions = document.createElement('div');
+            actions.className = 'rtt-car-actions';
+
+            const cancelBtn = document.createElement('button');
+            cancelBtn.type = 'button';
+            cancelBtn.className = 'rtt-car-action';
+            cancelBtn.textContent = 'Cancel';
+            cancelBtn.addEventListener('click', () => this.close());
+
+            const confirmLink = document.createElement('a');
+            confirmLink.className = 'rtt-car-action' + (isLeave ? ' leave' : '');
+            confirmLink.textContent = isLeave ? 'Yes, Leave Race' : 'Yes, Change Car';
+            confirmLink.href = targetUrl;
+            confirmLink.addEventListener('click', event => {
+                event.preventDefault();
+                event.stopPropagation();
+                this.close();
+                this.executeConfirmedAction(action);
             });
+
+            actions.append(cancelBtn, confirmLink);
+            body.append(msg, actions);
+            content.append(title, body);
+            popup.append(content);
+            popup.addEventListener('click', event => { if (event.target === popup) this.close(); });
+            this.panel = popup;
+            this.restoreFocus = trigger || document.activeElement;
+            this.closeKeyHandler = event => {
+                if (event.key === 'Escape') { event.preventDefault(); this.close(); }
+            };
+            document.addEventListener('keydown', this.closeKeyHandler);
+            // Mount inside #racingMainContainer when available so Torn's delegated listeners remain in scope.
+            const mountTarget = document.getElementById('racingMainContainer') || document.body;
+            mountTarget.append(popup);
+            confirmLink.focus?.();
+        },
+        open(trigger, mode = 'race') {
+            this.close();
+            const car = mode === 'car' ? this.readCar() : null;
+            if (mode === 'car' && !car) return;
+            const fields = mode === 'race' ? this.getFields() : [];
+            const popup = document.createElement('div');
+            popup.className = 'info-panel rtt-race-info-panel';
+            popup.setAttribute('role', 'presentation');
+            const content = document.createElement('div');
+            content.className = 'info-panel-content rtt-race-info-content';
+            content.setAttribute('role', 'dialog');
+            content.setAttribute('aria-modal', 'true');
+            const title = document.createElement('div');
+            title.className = 'info-title';
+            title.textContent = mode === 'car' ? 'Current car' : 'Race information';
+            title.id = mode === 'car' ? 'rtt-car-info-title' : 'rtt-race-info-title';
+            content.setAttribute('aria-labelledby', title.id);
+            const close = document.createElement('button');
+            close.className = 'info-close';
+            close.type = 'button';
+            close.textContent = '×';
+            close.setAttribute('aria-label', mode === 'car' ? 'Close current car' : 'Close race information');
+            close.addEventListener('click', () => this.close());
+            title.append(close);
+            const body = document.createElement('div');
+            body.className = 'info-content';
+            const intro = document.createElement('p');
+            intro.className = 'rtt-race-info-intro';
+            intro.textContent = this.readNative() ? 'Official race and track information from Torn.' : 'Track information and current race details from Torn. Full event details appear after the race finishes.';
+            if (mode === 'car') {
+                this.renderCar(body, car);
+            } else {
+                body.append(intro);
+            }
+            if (mode === 'race' && fields.length) {
+                const grid = document.createElement('div');
+                grid.className = 'rtt-race-info-grid';
+                for (const field of fields) {
+                    const cell = document.createElement('div');
+                    cell.className = 'rtt-race-info-cell';
+                    if (field.value.length > 34 || field.label === 'Track description') cell.classList.add('wide');
+                    if (field.label === 'Track description') cell.classList.add('track-description');
+                    const key = document.createElement('span');
+                    key.className = 'rtt-race-info-key';
+                    key.textContent = field.label;
+                    const value = document.createElement('span');
+                    value.className = 'rtt-race-info-value';
+                    value.textContent = field.value;
+                    cell.append(key, value);
+                    grid.append(cell);
+                }
+                body.append(grid);
+            } else if (mode === 'race') {
+                const msg = document.createElement('p');
+                msg.textContent = 'Race details are not available yet.';
+                body.append(msg);
+            }
+            content.append(title, body);
+            popup.append(content);
+            popup.addEventListener('click', event => { if (event.target === popup) this.close(); });
+            this.panel = popup;
+            this.restoreFocus = trigger || document.activeElement;
+            this.closeKeyHandler = event => {
+                if (event.key === 'Escape') { event.preventDefault(); this.close(); }
+            };
+            document.addEventListener('keydown', this.closeKeyHandler);
+            document.body.append(popup);
+            close.focus();
+        },
+        renderCar(body, car) {
+            const heading = document.createElement('div');
+            heading.className = 'rtt-car-heading';
+            const image = document.createElement('img');
+            image.className = 'rtt-car-image';
+            image.src = car.imageSrc;
+            image.alt = car.imageAlt;
+            const details = document.createElement('div');
+            const name = document.createElement('div');
+            name.className = 'rtt-car-name';
+            name.textContent = car.name;
+            details.append(name);
+            if (car.category) {
+                const category = document.createElement('div');
+                category.className = 'rtt-car-category';
+                category.textContent = car.category;
+                details.append(category);
+            }
+            heading.append(image, details);
+            body.append(heading);
+            for (const stat of car.stats) {
+                const row = document.createElement('div');
+                row.className = 'rtt-car-stat';
+                const top = document.createElement('div');
+                top.className = 'rtt-car-stat-top';
+                const label = document.createElement('span');
+                label.textContent = stat.name;
+                const value = document.createElement('strong');
+                value.textContent = stat.tooltip || `${stat.percent.toFixed(1)}%`;
+                top.append(label, value);
+                const track = document.createElement('div');
+                track.className = 'rtt-car-track';
+                if (stat.negative) track.classList.add('negative');
+                track.setAttribute('role', 'img');
+                track.setAttribute('aria-label', `${stat.name}: ${value.textContent}`);
+                const total = document.createElement('span');
+                total.className = 'rtt-car-total';
+                total.style.width = `${stat.percent}%`;
+                const baseline = document.createElement('span');
+                baseline.className = 'rtt-car-baseline';
+                baseline.style.width = `${stat.percent * stat.baseline / 100}%`;
+                track.append(total, baseline);
+                row.append(top, track);
+                body.append(row);
+            }
+            // Expose Change Car / Leave this race in the Car tab as well as the LiveMapIntegration.hasActionMenu() overflow.
+            if (car.links.length) {
+                const actions = document.createElement('div');
+                actions.className = 'rtt-car-actions';
+                for (const action of car.links) {
+                    const link = document.createElement('a');
+                    link.className = 'rtt-car-action' + (/leave/i.test(action.label) ? ' leave' : '');
+                    link.textContent = action.label;
+                    // Preserve Torn's current URL and link classes, or use the direct action URL when navigating.
+                    link.href = action.anchor.href;
+                    link.dataset && (link.dataset.targetUrl = this.resolveActionUrl(action.label, action.anchor.href));
+                    for (const cls of action.anchor.classList) {
+                        if (cls === 'need-confirmation' || cls === 'btn-action-tab') link.classList.add(cls);
+                    }
+                    actions.append(link);
+                }
+                actions.addEventListener?.('click', event => {
+                    const clicked = event.target?.closest?.('a.rtt-car-action');
+                    if (!clicked) return;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    const matched = car.links.find(item => item.label === clicked.textContent.trim()) || {
+                        label: clicked.textContent.trim(),
+                        anchor: clicked
+                    };
+                    this.confirmAction(matched, clicked);
+                });
+                body.append(actions);
+            }
+        },
+        close() {
+            this.panel?.remove();
+            this.panel = null;
+            if (this.closeKeyHandler) document.removeEventListener('keydown', this.closeKeyHandler);
+            this.closeKeyHandler = null;
+            if (this.restoreFocus?.isConnected) this.restoreFocus.focus();
+            this.restoreFocus = null;
+        },
+        disconnect() {
+            this.observer?.disconnect();
+            this.observer = null;
+            if (this.frame !== null) cancelAnimationFrame(this.frame);
+            this.frame = null;
+            this.root?.querySelector('.rtt-race-info-integrated')?.classList.remove('rtt-race-info-integrated');
+            this.root = null;
+            this.close();
+        }
+    };
+
+    // Beta 10: The native Torn track stays LIVE and INLINE above the leaderboard.
+    // No canvas reparenting, duplication, hiding, redraw, or iframe is involved.
+    const LiveMapIntegration = {
+        root: null,
+        title: null,
+        map: null,
+        menu: null,
+        button: null,
+        infoButton: null,
+        list: null,
+        actions: [],
+        documentClick: null,
+        keyHandler: null,
+        stylesInstalled: false,
+        findNodes() {
+            const root = document.getElementById('racingupdates');
+            const map = root?.querySelector('.drivers-list .track-wrap');
+            const title = root?.querySelector('.drivers-list > .title-black');
+            if (!root || !map?.querySelector('#raceCanvas') || !title || !root.querySelector('#leaderBoard')) return null;
+            return { root, map, title };
+        },
+        readActions() {
+            if (!this.root) return [];
+            if (typeof State !== 'undefined' && State.raceFinished) return [];
+            if (/race\s+finished/i.test(this.root.querySelector?.('#infoSpot')?.textContent?.trim() || '')) return [];
+            const card = this.root.querySelector('.car-selected-wrap > .car-selected');
+            if (card?.querySelector('.title-black')?.textContent?.trim().toLowerCase() !== 'current car') return [];
+            const linkWrap = card.querySelector?.('.model-wrap .link-wrap');
+            if (linkWrap?.style?.display === 'none') return [];
+            return [...card.querySelectorAll('.model-wrap .link-wrap a[href]')]
+                .filter(node => /^(change car|leave this race)$/i.test(node.textContent.trim()))
+                .map(anchor => ({ label: anchor.textContent.trim(), anchor }));
+        },
+        install() {
+            this.disconnect();
+            this.installStyles();
+            this.sync();
+        },
+        sync() {
+            const found = this.findNodes();
+            if (!found) { this.clearMount(); return; }
+            if (this.root !== found.root || this.title !== found.title || this.map !== found.map || !this.menu?.isConnected) {
+                this.clearMount();
+                this.root = found.root;
+                this.title = found.title;
+                this.map = found.map;
+                this.root.classList.add('rtt-map-integrated');
+                this.createMenu();
+            }
+            const next = this.readActions();
+            const changed = next.length !== this.actions.length || next.some((item, index) =>
+                item.anchor !== this.actions[index]?.anchor || item.label !== this.actions[index]?.label);
+            if (changed) this.renderActions(next);
+        },
+        createMenu() {
+            const menu = document.createElement('div');
+            menu.className = 'rtt-track-actions';
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'rtt-track-more';
+            button.hidden = true; // The info icon is always available; ⋯ only with Torn actions.
+            button.textContent = '⋯';
+            button.title = 'Race actions';
+            button.setAttribute('aria-label', 'Race actions: change car or leave race');
+            button.setAttribute('aria-haspopup', 'true');
+            button.setAttribute('aria-expanded', 'false');
+            const list = document.createElement('div');
+            list.className = 'rtt-track-action-list';
+            list.id = 'rtt-track-action-list';
+            list.setAttribute('role', 'menu');
+            list.hidden = true;
+            button.setAttribute('aria-controls', list.id);
+            button.addEventListener('click', event => {
+                event.stopPropagation();
+                this.toggle(!this.isOpen());
+            });
+            const info = document.createElement('button');
+            info.type = 'button';
+            info.className = 'rtt-track-info-button';
+            info.textContent = 'i';
+            info.title = 'Track and race information';
+            info.setAttribute('aria-label', 'Track and race information');
+            info.setAttribute('aria-haspopup', 'dialog');
+            info.addEventListener('click', event => {
+                event.preventDefault();
+                event.stopPropagation();
+                this.toggle(false);
+                RaceInfoIntegration.open(info);
+            });
+            menu.append(info, button, list);
+            this.title.append(menu);
+            this.menu = menu;
+            this.button = button;
+            this.infoButton = info;
+            this.list = list;
+            this.documentClick = event => {
+                if (this.isOpen() && !this.menu?.contains(event.target)) this.toggle(false);
+            };
+            this.keyHandler = event => {
+                if (event.key === 'Escape' && this.isOpen()) {
+                    event.preventDefault();
+                    this.toggle(false);
+                    this.button?.focus();
+                }
+            };
+            document.addEventListener('click', this.documentClick);
+            document.addEventListener('keydown', this.keyHandler);
+        },
+        renderActions(actions) {
+            this.actions = actions;
+            if (!this.list || !this.menu) return;
+            this.toggle(false);
+            this.list.replaceChildren();
+            for (const action of actions) {
+                const entry = document.createElement('button');
+                entry.type = 'button';
+                entry.className = 'rtt-track-action' + (/leave/i.test(action.label) ? ' rtt-track-action-danger' : '');
+                entry.setAttribute('role', 'menuitem');
+                entry.textContent = action.label;
+                entry.addEventListener('click', event => {
+                    event.stopPropagation();
+                    this.toggle(false);
+                    const live = this.readActions().find(item => item.label === action.label) || action;
+                    if (typeof RaceInfoIntegration !== 'undefined' && typeof RaceInfoIntegration.confirmAction === 'function') {
+                        RaceInfoIntegration.confirmAction(live, this.button);
+                    } else if (live?.anchor?.isConnected) {
+                        live.anchor.click();
+                    }
+                });
+                this.list.append(entry);
+            }
+            // The race info icon stays usable even without car actions.
+            this.button.hidden = actions.length === 0;
+        },
+        isOpen() { return Boolean(this.list && !this.list.hidden); },
+        toggle(open) {
+            if (!this.list || !this.button) return;
+            const show = Boolean(open && this.actions.length);
+            this.list.hidden = !show;
+            this.button.setAttribute('aria-expanded', String(show));
+            this.menu?.classList.toggle('is-open', show);
+        },
+        hasActionMenu() { return Boolean(this.menu?.isConnected && this.actions.length); },
+        hasInfoButton() { return Boolean(this.infoButton?.isConnected); },
+        installStyles() {
+            if (this.stylesInstalled) return;
+            GM_addStyle(`
+                /* One continuous racing card: track heading, live map, navigation, drivers. */
+                #racingupdates.rtt-map-integrated .drivers-list > .title-black {
+                    position: relative !important; box-sizing: border-box !important;
+                    min-height: 42px; padding: 11px 92px 11px 12px !important;
+                    background: #263440 !important; border: 1px solid #3c5060 !important;
+                    border-bottom: 0 !important; border-radius: 10px 10px 0 0 !important;
+                    color: #edf5fa !important; font-size: 13px !important;
+                    line-height: 20px !important; white-space: normal !important;
+                    overflow: visible !important; text-overflow: clip !important;
+                    z-index: 4;
+                }
+                #racingupdates.rtt-map-integrated .drivers-list > .cont-black {
+                    box-sizing: border-box !important; min-width: 0 !important;
+                    width: 100% !important; padding: 0 !important;
+                    background: #17222c !important;
+                    border: 1px solid #3c5060 !important;
+                    border-top: 0 !important; border-radius: 0 0 10px 10px !important;
+                    overflow: visible !important;
+                }
+                #racingupdates.rtt-map-integrated .drivers-list .track-wrap {
+                    box-sizing: border-box !important; position: relative !important;
+                    float: none !important; display: block !important;
+                    visibility: visible !important; pointer-events: auto !important;
+                    width: 100% !important; min-width: 0 !important;
+                    height: auto !important; margin: 0 !important; padding: 9px 9px 8px !important;
+                    background: #17222c !important;
+                }
+                #racingupdates.rtt-map-integrated .drivers-list .tracks {
+                    position: relative !important; display: block !important;
+                    box-sizing: border-box !important; width: 100% !important;
+                    max-width: 680px !important; height: auto !important;
+                    aspect-ratio: 520 / 243; margin: 0 auto !important;
+                    overflow: hidden !important; border-radius: 6px !important;
+                    background: #101922 !important;
+                }
+                #racingupdates.rtt-map-integrated .drivers-list .tracks > .img-track,
+                #racingupdates.rtt-map-integrated .drivers-list .tracks > #raceCanvas {
+                    box-sizing: border-box !important; position: absolute !important;
+                    top: 0 !important; left: 0 !important;
+                    width: 100% !important; height: 100% !important;
+                    max-width: none !important; margin: 0 !important;
+                }
+                #racingupdates.rtt-map-integrated .drivers-list .tracks > #raceCanvas {
+                    touch-action: manipulation;
+                }
+                #racingupdates.rtt-map-integrated .drivers-list #racingdetails {
+                    max-width: 75%; box-sizing: border-box !important;
+                }
+                /* The old native tooltip is replaced by an accessible button in
+                   the same header. Its element and data attributes remain intact. */
+                #racingupdates.rtt-map-integrated .drivers-list .track-info-wrap {
+                    display: none !important;
+                }
+                .rtt-track-actions {
+                    position: absolute; top: 5px; right: 6px;
+                    z-index: 20; display: flex; align-items: center; gap: 7px;
+                    font: 500 12px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+                }
+                .rtt-track-info-button {
+                    display: flex; align-items: center; justify-content: center;
+                    box-sizing: border-box; width: 32px; height: 32px; padding: 0;
+                    cursor: pointer; border: 1px solid #4a6171; border-radius: 7px;
+                    color: #d8e6ef; background: #334652;
+                    font: italic bold 21px/1 Georgia,serif;
+                    -webkit-tap-highlight-color: transparent;
+                }
+                .rtt-track-info-button:hover { color: #fff; border-color: #7999ac; background: #3d5363; }
+                .rtt-track-info-button:focus-visible { outline: 2px solid #9cd2f5; outline-offset: 2px; }
+                .rtt-track-actions[hidden], .rtt-track-more[hidden], .rtt-track-action-list[hidden] { display: none !important; }
+                .rtt-track-more {
+                    display: flex; align-items: center; justify-content: center;
+                    width: 34px; height: 31px; padding: 0; cursor: pointer;
+                    color: #d8e6ef; background: #334652; border: 1px solid #4a6171;
+                    border-radius: 7px; font-size: 22px; line-height: 1;
+                    -webkit-tap-highlight-color: transparent;
+                }
+                .rtt-track-more[aria-expanded="true"], .rtt-track-more:hover {
+                    color: #fff; border-color: #7999ac; background: #3d5363;
+                }
+                .rtt-track-more:focus-visible, .rtt-track-action:focus-visible {
+                    outline: 2px solid #9cd2f5; outline-offset: 2px;
+                }
+                .rtt-track-action-list {
+                    position: absolute; top: calc(100% + 5px); right: 0;
+                    z-index: 30; width: max-content; min-width: 172px;
+                    max-width: min(280px, calc(100vw - 32px));
+                    padding: 5px; border: 1px solid #4a6274; border-radius: 9px;
+                    background: #233440; box-shadow: 0 10px 24px rgba(0,0,0,.45);
+                }
+                .rtt-track-action {
+                    box-sizing: border-box; width: 100%; min-height: 40px;
+                    display: flex; align-items: center; text-align: left;
+                    cursor: pointer; border: 0; border-radius: 6px;
+                    padding: 9px 11px; color: #e5f1f9; background: transparent;
+                    font: 600 12px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+                }
+                .rtt-track-action:hover { background: #344c5e; }
+                .rtt-track-action-danger { color: #ffc9c3; }
+                .rtt-track-action-danger:hover { background: #553439; }
+                @media (max-width: 600px) {
+                    #racingupdates.rtt-map-integrated .drivers-list > .title-black {
+                        font-size: 12px !important; padding: 10px 88px 10px 9px !important;
+                    }
+                    #racingupdates.rtt-map-integrated .drivers-list .track-wrap {
+                        padding: 6px 6px 7px !important;
+                    }
+                    #racingupdates.rtt-map-integrated .drivers-list #racingdetails {
+                        max-width: 80%; font-size: 10px;
+                    }
+                    .rtt-track-more, .rtt-track-info-button { min-width: 34px; min-height: 34px; }
+                }
+            `);
+            this.stylesInstalled = true;
+        },
+        clearMount() {
+            this.toggle(false);
+            if (this.documentClick) document.removeEventListener('click', this.documentClick);
+            if (this.keyHandler) document.removeEventListener('keydown', this.keyHandler);
+            this.documentClick = this.keyHandler = null;
+            this.menu?.remove();
+            this.root?.classList.remove('rtt-map-integrated');
+            this.root = this.title = this.map = this.menu = this.button = this.infoButton = this.list = null;
+            this.actions = [];
+        },
+        disconnect() { this.clearMount(); }
+    };
+
+    // All secondary controls are real tabs beneath the UNMOVED, continuously running
+    // Torn race canvas. Keep the live leaderboard and the existing data views mounted
+    // so switching tabs never recreates Torn's race or discards unsaved form inputs.
+    const TabWorkspace = {
+        host: null,
+        controls: null,
+        nativeLeaderboard: null,
+        driverList: null,
+        raceCard: null,
+        panes: new Map(),
+        buttons: new Map(),
+        active: 'drivers',
+        carSignature: '',
+        dataSignatures: new Map(),
+        stylesInstalled: false,
+        labels: {
+            drivers: 'Drivers', car: 'Car', info: 'Info', history: 'History',
+            stats: 'Stats', export: 'Export', settings: 'Settings'
+        },
+        selectors: {
+            car: '.telemetry-car-button', info: '.telemetry-info-button',
+            history: '.telemetry-history-button', stats: '.telemetry-stats-button',
+            export: '.telemetry-download-button', settings: '.telemetry-settings-button'
+        },
+        install() {
+            this.disconnect();
+            const controls = State.controlsContainer;
+            const driverList = State.customUIContainer;
+            const scrollbar = document.getElementById('drivers-scrollbar');
+            const raceCard = controls?.closest('.drivers-list');
+            if (!controls || !driverList || !scrollbar || !raceCard || !raceCard.contains(scrollbar)) return;
+            this.installStyles();
+            this.controls = controls;
+            this.driverList = driverList;
+            this.nativeLeaderboard = scrollbar;
+            this.raceCard = raceCard;
+            controls.setAttribute('role', 'tablist');
+            controls.setAttribute('aria-label', 'Racing telemetry views');
+            const driversButton = document.createElement('button');
+            driversButton.type = 'button';
+            driversButton.className = 'telemetry-drivers-button';
+            driversButton.textContent = 'Drivers';
+            driversButton.title = 'View live racing leaderboard';
+            driversButton.addEventListener('click', () => this.activate('drivers'));
+            controls.prepend(driversButton);
+
+            const host = document.createElement('div');
+            host.id = 'rtt-telemetry-workspace';
+            host.className = 'rtt-telemetry-workspace';
+            controls.after(host);
+            this.host = host;
+            for (const key of Object.keys(this.labels)) {
+                const button = key === 'drivers' ? driversButton : controls.querySelector(this.selectors[key]);
+                if (!button) continue;
+                const pane = document.createElement('section');
+                pane.className = 'rtt-telemetry-pane';
+                pane.id = `rtt-telemetry-pane-${key}`;
+                pane.dataset.view = key;
+                pane.hidden = true;
+                pane.setAttribute('role', 'tabpanel');
+                pane.setAttribute('aria-labelledby', `rtt-telemetry-tab-${key}`);
+                host.append(pane);
+                button.id = `rtt-telemetry-tab-${key}`;
+                button.type = 'button';
+                button.setAttribute('role', 'tab');
+                button.setAttribute('aria-controls', pane.id);
+                button.setAttribute('aria-selected', 'false');
+                button.tabIndex = -1;
+                // UI owns the button click events; this module owns their layout and content.
+                button.addEventListener('keydown', event => this.onTabKey(event, key));
+                this.buttons.set(key, button);
+                this.panes.set(key, pane);
+            }
+            // Keep the ORIGINAL Torn leaderboard DOM so race updates and click handlers
+            // continue working. Both leaderboard alternatives belong to Drivers.
+            this.panes.get('drivers').append(driverList, scrollbar);
+            this.activate('drivers');
+        },
+        onTabKey(event, key) {
+            if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+            event.preventDefault();
+            const keys = [...this.buttons.keys()].filter(name => this.isAvailable(name));
+            const i = keys.indexOf(key);
+            const next = event.key === 'Home' ? keys[0] : event.key === 'End' ? keys[keys.length - 1]
+                : keys[(i + (event.key === 'ArrowRight' ? 1 : -1) + keys.length) % keys.length];
+            if (next) {
+                this.activate(next);
+                this.buttons.get(next)?.focus();
+            }
+        },
+        isAvailable(key) {
+            if (key === 'drivers') return true;
+            if (key === 'car' && RaceInfoIntegration.isRaceFinished()) return false;
+            const button = this.buttons.get(key);
+            return Boolean(button && !button.hidden && button.style.display !== 'none');
+        },
+        activate(key = 'drivers') {
+            if (!this.host?.isConnected) return;
+            if (!this.isAvailable(key)) key = 'drivers';
+            this.active = key;
+            for (const [name, pane] of this.panes) {
+                const selected = name === key;
+                pane.hidden = !selected;
+                const button = this.buttons.get(name);
+                if (button) {
+                    button.setAttribute('aria-selected', String(selected));
+                    button.tabIndex = selected ? 0 : -1;
+                }
+            }
+            this.raceCard?.classList.toggle('rtt-tab-viewing-other', key !== 'drivers');
+            this.renderView(key);
+            this.buttons.get(key)?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+        },
+        getDataSignature(key) {
+            if (key === 'history') {
+                return `${State.currentRaceId || ''}:${State.raceFinished ? 1 : 0}:${Config.get('historicalRaceLimit')}:${Boolean(Config.get('apiKey'))}`;
+            }
+            if (key === 'stats') {
+                return `${State.currentRaceId || ''}:${State.trackInfo?.id || ''}:${State.currentRaceClass || ''}:${State.raceFinished ? 1 : 0}:${Config.get('historicalRaceLimit')}:${Boolean(Config.get('apiKey'))}`;
+            }
+            if (key === 'export') {
+                return `${State.currentRaceId || ''}:${State.finalRaceData?.length || 0}`;
+            }
+            return 'static';
+        },
+        invalidateRaceBoundViews() {
+            this.dataSignatures.delete('history');
+            this.dataSignatures.delete('stats');
+            this.dataSignatures.delete('export');
+            for (const key of ['history', 'stats', 'export']) {
+                const pane = this.panes.get(key);
+                if (!pane) continue;
+                if (this.active === key && this.isAvailable(key)) {
+                    pane.replaceChildren();
+                    this.renderView(key);
+                } else {
+                    pane.replaceChildren();
+                }
+            }
+        },
+        renderView(key) {
+            const pane = this.panes.get(key);
+            if (!pane || key === 'drivers') return;
+            if (key === 'car') { this.renderCar(); return; }
+            const sig = this.getDataSignature(key);
+            if (pane.firstElementChild && !pane.querySelector?.('.rtt-tab-message')) {
+                if (this.dataSignatures.get(key) === sig) return; // Preserve the mounted content across switches.
+                pane.replaceChildren();
+            }
+            this.dataSignatures.set(key, sig);
+            let task = null;
+            let instance = null;
+            try {
+                switch (key) {
+                    case 'info': UI.createInfoPanel(); instance = State.infoPanelInstance; break;
+                    case 'history': task = UI.createHistoryPanel(); instance = State.historyPanelInstance; break;
+                    case 'stats':
+                        this.showMessage(pane, 'Loading advanced statistics…');
+                        // Preserve the original ordering: resolve live track/class metadata
+                        // before calculating track-specific historical statistics.
+                        RaceManager.updateTrackAndClassInfo().then(() => {
+                            if (!this.host?.contains(pane)) return;
+                            const statsTask = UI.createAdvancedStatsPanel();
+                            const statsPanel = State.advancedStatsPanelInstance;
+                            this.dataSignatures.set('stats', this.getDataSignature('stats'));
+                            if (statsPanel) {
+                                statsPanel.classList.add('rtt-inline-tab-content');
+                                statsPanel.removeAttribute('aria-modal');
+                                pane.replaceChildren(statsPanel);
+                            } else this.showMessage(pane, 'Advanced statistics are not available.');
+                            if (statsTask?.catch) statsTask.catch(error => {
+                                if (this.host?.contains(pane)) this.showMessage(pane, `Unable to load stats: ${error.message}`);
+                            });
+                        }).catch(error => {
+                            if (this.host?.contains(pane)) this.showMessage(pane, `Unable to load stats: ${error.message}`);
+                        });
+                        return;
+                    case 'settings': UI.createSettingsPopup(); instance = State.settingsPopupInstance; break;
+                    case 'export': UI.createDownloadPopup(); instance = State.downloadPopupInstance; break;
+                }
+                if (instance) {
+                    instance.classList.add('rtt-inline-tab-content');
+                    instance.removeAttribute('aria-modal');
+                    pane.append(instance);
+                } else {
+                    this.showMessage(pane, 'This view is not available.');
+                }
+                if (task?.catch) task.catch(error => {
+                    if (this.host?.isConnected && pane.contains(instance)) {
+                        this.showMessage(pane, `Unable to load ${this.labels[key].toLowerCase()}: ${error.message}`);
+                    }
+                });
+            } catch (error) {
+                this.showMessage(pane, `Unable to open ${this.labels[key].toLowerCase()}: ${error.message}`);
+            }
+        },
+        renderCar() {
+            const pane = this.panes.get('car');
+            if (!pane || this.active !== 'car') return;
+            const car = RaceInfoIntegration.readCar();
+            if (!car) {
+                this.carSignature = '';
+                this.showMessage(pane, 'Your current car is not available for this race.');
+                return;
+            }
+            const signature = JSON.stringify({name:car.name,category:car.category,image:car.imageSrc, stats:car.stats,
+                links:car.links.map(link => [link.label, link.anchor.getAttribute('href')])});
+            if (signature === this.carSignature && pane.querySelector('.rtt-tab-car-content')) return;
+            this.carSignature = signature;
+            const content = document.createElement('div');
+            content.className = 'rtt-tab-car-content';
+            const title = document.createElement('h3');
+            title.className = 'rtt-tab-view-title';
+            title.textContent = 'Current car';
+            const body = document.createElement('div');
+            body.className = 'rtt-tab-car-body';
+            RaceInfoIntegration.renderCar(body, car);
+            content.append(title, body);
+            pane.replaceChildren(content);
+        },
+        refreshCar() {
+            if (this.active === 'car') this.renderCar();
+        },
+        refreshVisibility() {
+            if (!this.host?.isConnected) return;
+            const carButton = this.buttons.get('car');
+            if (carButton && RaceInfoIntegration.isRaceFinished()) {
+                carButton.style.display = 'none';
+                carButton.setAttribute('aria-hidden', 'true');
+            }
+            if (!this.isAvailable(this.active)) this.activate('drivers');
+        },
+        // The existing Save / Download controls close their former popup node after
+        // acting. In inline mode, restore a fresh editable panel in the same tab.
+        restoreAfterAction(key) {
+            if (this.active !== key || !this.host?.isConnected) return;
+            const pane = this.panes.get(key);
+            if (!pane) return;
+            this.dataSignatures.delete(key);
+            pane.replaceChildren();
+            this.renderView(key);
+        },
+        showMessage(pane, message) {
+            const text = document.createElement('p');
+            text.className = 'rtt-tab-message';
+            text.textContent = message;
+            pane.replaceChildren(text);
+        },
+        disconnect() {
+            if (this.host && this.controls?.isConnected) {
+                // Restore the original sibling order; no Torn element is discarded.
+                if (this.driverList) this.host.before(this.driverList);
+                if (this.nativeLeaderboard) this.host.before(this.nativeLeaderboard);
+            }
+            this.raceCard?.classList.remove('rtt-tab-viewing-other');
+            this.controls?.removeAttribute('role');
+            this.controls?.removeAttribute('aria-label');
+            this.host?.remove();
+            this.host = null;
+            this.controls = null;
+            this.driverList = null;
+            this.nativeLeaderboard = null;
+            this.raceCard = null;
+            this.panes.clear();
+            this.buttons.clear();
+            this.dataSignatures.clear();
+            this.active = 'drivers';
+            this.carSignature = '';
+        },
+        installStyles() {
+            if (this.stylesInstalled) return;
+            GM_addStyle(`
+                /* Integrated, scrollable tab bar directly under the always-live race map. */
+                #racingupdates.rtt-map-integrated #telemetryControlsContainer[role="tablist"],
+                #telemetryControlsContainer[role="tablist"] {
+                    box-sizing: border-box !important; display: flex !important; flex-wrap: nowrap !important;
+                    gap: 0 !important; width: 100% !important; max-width: 100% !important;
+                    min-height: 43px; margin: 0 !important; padding: 0 5px !important;
+                    background: #1c2b36 !important; border-top: 1px solid #384d5d !important;
+                    border-bottom: 1px solid #384d5d !important;
+                    overflow-x: auto !important; overflow-y: hidden !important;
+                    scrollbar-width: none; -webkit-overflow-scrolling: touch;
+                }
+                #telemetryControlsContainer[role="tablist"]::-webkit-scrollbar { display: none; }
+                #telemetryControlsContainer[role="tablist"] > button[role="tab"] {
+                    box-sizing: border-box !important; flex: 0 0 auto !important;
+                    min-width: 60px !important; width: auto !important; max-width: none !important;
+                    min-height: 42px !important; margin: 0 !important; padding: 10px 12px 9px !important;
+                    border: 0 !important; border-bottom: 2px solid transparent !important;
+                    border-radius: 0 !important; background: transparent !important;
+                    box-shadow: none !important; color: #9eafbd !important;
+                    text-align: center !important; white-space: nowrap !important;
+                    font: 600 12px/18px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+                    cursor: pointer; -webkit-tap-highlight-color: transparent;
+                }
+                #telemetryControlsContainer[role="tablist"] > button[aria-selected="true"] {
+                    color: #e8f5ff !important; border-bottom-color: #67bce9 !important;
+                    background: #263947 !important;
+                }
+                #telemetryControlsContainer[role="tablist"] > button[role="tab"]:focus-visible {
+                    outline: 2px solid #80d2ff !important; outline-offset: -3px;
+                }
+                #telemetryControlsContainer[role="tablist"] > button[role="tab"]:hover {
+                    color: #ecf7fe !important; background: #263947 !important;
+                }
+                #telemetryControlsContainer[role="tablist"] > button[role="tab"][style*="display: none"] { display: none !important; }
+                #rtt-telemetry-workspace {
+                    box-sizing: border-box; width: 100%; margin: 0 !important; padding: 0 !important;
+                    min-width: 0; background: #17222c; color: #e1edf4;
+                    font: 13px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+                }
+                #rtt-telemetry-workspace > .rtt-telemetry-pane { min-width: 0; width: 100%; box-sizing: border-box; padding: 0; }
+                #rtt-telemetry-workspace > .rtt-telemetry-pane[hidden] { display: none !important; }
+                #rtt-telemetry-pane-drivers > #custom-driver-list-container {
+                    margin: 0 !important; border: 0 !important; border-radius: 0 !important;
+                    background: #17222c !important; max-height: none !important;
+                }
+                #rtt-telemetry-pane-drivers > #drivers-scrollbar { margin: 0 !important; }
+                #rtt-telemetry-workspace .rtt-tab-view-title { display: block !important; position: static !important;
+                    height: auto !important; font-size: 15px !important; font-weight: 700 !important;
+                    margin: 0 0 12px !important; padding: 0 !important; border: 0 !important;
+                    background: none !important; color: #eaf5fd !important; line-height: 1.3 !important; }
+                #rtt-telemetry-workspace .rtt-tab-car-content { padding: 14px; }
+                #rtt-telemetry-workspace .rtt-tab-car-body { min-width: 0; }
+                #rtt-telemetry-workspace .rtt-tab-message { margin: 0; padding: 18px 14px; color: #acc2d0; }
+                /* The existing panel generators now mount as DOCUMENT FLOW content,
+                   not darkening/full-screen popups. Their interactive contents survive. */
+                #rtt-telemetry-workspace .rtt-inline-tab-content {
+                    box-sizing: border-box !important; display: block !important;
+                    position: static !important; inset: auto !important; width: 100% !important;
+                    height: auto !important; min-height: 0 !important; max-height: none !important;
+                    margin: 0 !important; padding: 0 !important; overflow: visible !important;
+                    background: transparent !important; box-shadow: none !important;
+                    border: 0 !important; border-radius: 0 !important;
+                    backdrop-filter: none !important; z-index: auto !important;
+                }
+                #rtt-telemetry-workspace .rtt-inline-tab-content > :is(.settings-popup-content,
+                    .stats-panel-content, .history-panel-content, .info-panel-content, .download-popup-content) {
+                    box-sizing: border-box !important; display: block !important;
+                    position: static !important; width: 100% !important; min-width: 0 !important;
+                    max-width: none !important; height: auto !important; max-height: none !important;
+                    margin: 0 !important; padding: 13px !important;
+                    border: 0 !important; border-radius: 0 !important;
+                    background: transparent !important; box-shadow: none !important;
+                    overflow: visible !important; flex: auto !important;
+                }
+                #rtt-telemetry-workspace :is(.settings-close,.stats-close,.history-close,.info-close,.download-close) { display: none !important; }
+                #rtt-telemetry-workspace :is(.stats-content,.history-content,.settings-content,.download-content,.info-content) {
+                    max-width: 100% !important; min-width: 0 !important;
+                }
+                #rtt-telemetry-workspace :is(.stats-content,.history-content) { overflow-x: auto !important; }
+                #rtt-telemetry-workspace :is(.stats-content,.history-content) table { width: 100%; }
+                @media (max-width: 480px) {
+                    #telemetryControlsContainer[role="tablist"] > button[role="tab"] {
+                        min-width: 57px !important; padding: 9px 11px !important; font-size: 12px !important;
+                    }
+                    #rtt-telemetry-workspace .rtt-inline-tab-content > :is(.settings-popup-content,
+                        .stats-panel-content,.history-panel-content,.info-panel-content,.download-popup-content) { padding: 12px !important; }
+                }
+            `);
+            this.stylesInstalled = true;
         }
     };
 
@@ -3570,6 +4848,8 @@
         initialize() {
             if (!this.stylesInjected) {
                 GM_addStyle(TELEMETRY_STYLE_TEXT);
+                GM_addStyle(RTT_V4_STYLES);
+                GM_addStyle(RTT_BETA2_STYLES);
                 this.stylesInjected = true;
             }
 
@@ -3804,41 +5084,6 @@
         body.telemetry-hidden .driver-telemetry-display, body.telemetry-hidden .driver-progress-bars { display: none !important; }
         .driver-details-toggle { width: 26px; height: 26px; margin-left: 6px; padding: 0; border: 1px solid var(--border-color); border-radius: 4px; background: rgba(0, 0, 0, 0.2); color: var(--text-color); cursor: pointer; font-size: 18px; line-height: 20px; flex-shrink: 0; }
         .driver-details-toggle:hover, .driver-details-toggle:focus-visible { background: var(--background-light); border-color: var(--panel-link-color); outline: none; }
-        .driver-details { width: 100%; background-color: var(--details-bg); margin-top: 0; padding: 0 10px; box-sizing: border-box; max-height: 0; opacity: 0; overflow: hidden; border-radius: 4px; color: #bbb; font-size: 0.9em; transition: max-height 0.4s ease-out, opacity 0.3s ease-in, padding-top 0.4s ease-out, padding-bottom 0.4s ease-out, margin-top 0.4s ease-out; }
-        .driver-details p { margin: 5px 0; line-height: 1.4; }
-        .driver-details strong { color: #ddd; }
-        .driver-details a { color: var(--panel-link-color); text-decoration: none; }
-        .driver-details a:hover { text-decoration: underline; }
-        .custom-driver-item.details-visible .driver-details { max-height: 520px; opacity: 1; padding-top: 8px; padding-bottom: 8px; margin-top: 6px; }
-        .driver-details-shell { display: flex; flex-direction: column; gap: 8px; }
-        .driver-details-topline { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
-        .driver-identity, .driver-status-wrap { display: flex; flex-direction: column; gap: 2px; }
-        .driver-identity { flex: 1 1 220px; min-width: 0; }
-        .driver-status-wrap { margin-left: auto; align-items: flex-end; min-width: 96px; }
-        .driver-identity-label { font-size: 0.72em; letter-spacing: 0.06em; text-transform: uppercase; color: #9ca4ad; font-weight: 700; }
-        .driver-identity-value { color: var(--text-color); font-weight: 600; line-height: 1.3; }
-        .driver-status-chip { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 999px; background: rgba(0, 0, 0, 0.24); border: 1px solid var(--border-color); color: var(--text-color); font-weight: 700; text-transform: capitalize; }
-        .custom-driver-item.status-ready .driver-status-chip { background: rgba(144, 164, 174, 0.18); border-color: rgba(144, 164, 174, 0.45); color: #cfd8dc; }
-        .custom-driver-item.status-racing .driver-status-chip { background: rgba(116, 192, 252, 0.16); border-color: rgba(116, 192, 252, 0.45); color: #cfe8ff; }
-        .custom-driver-item.status-finished .driver-status-chip { background: rgba(129, 199, 132, 0.18); border-color: rgba(129, 199, 132, 0.45); color: #d7f4db; }
-        .custom-driver-item.status-crashed .driver-status-chip { background: rgba(229, 115, 115, 0.2); border-color: rgba(229, 115, 115, 0.45); color: #ffd9d9; }
-        .detail-original-status { color: #9ca4ad; font-size: 0.85em; }
-        .detail-original-status:empty { display: none; }
-        .driver-meta-row { display: grid; grid-template-columns: auto 1fr; align-items: baseline; column-gap: 8px; }
-        .driver-metrics-grid, .driver-api-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 7px; }
-        .driver-metric-item, .driver-api-item { border: 1px solid var(--border-color); border-radius: 6px; background: rgba(0, 0, 0, 0.16); padding: 5px 7px; min-height: 42px; display: flex; flex-direction: column; justify-content: center; gap: 3px; }
-        .driver-metric-label, .driver-api-label { font-size: 0.72em; color: #9ca4ad; letter-spacing: 0.05em; text-transform: uppercase; font-weight: 700; }
-        .driver-metric-value, .driver-api-value { color: var(--text-color); font-weight: 700; line-height: 1.25; }
-        .driver-metric-value .metric-unit { color: #9ca4ad; font-weight: 500; }
-        .driver-metric-item.metric-est-lap { grid-column: 1 / -1; }
-        .api-stats-container { margin-top: 0; padding-top: 0; border-top: none; }
-        .driver-section-title { font-size: 0.72em; letter-spacing: 0.06em; text-transform: uppercase; color: #9ca4ad; font-weight: 700; margin-bottom: 6px; }
-        .api-stats-container.loading .api-stat { color: var(--api-loading-color); font-style: italic; }
-        .api-stats-container.error .api-stat-error-msg, .api-stats-container.no-key .api-stat-error-msg { color: var(--api-error-color); display: block; font-style: italic; }
-        .api-stats-container.no-key .api-stat-error-msg { color: var(--api-info-color); }
-        .api-stat-error-msg { display: none; margin-top: 6px; }
-        .api-stat { font-weight: bold; color: var(--text-color); }
-        .driver-details-footer { border-top: 1px dashed var(--border-color); padding-top: 6px; color: #9ca4ad; font-size: 0.78em; }
         #telemetryControlsContainer { margin: 10px 0 5px 0; justify-content: flex-end; gap: 5px; }
         .telemetry-download-button, .telemetry-info-button, .telemetry-history-button, .telemetry-stats-button, .telemetry-settings-button { background: var(--background-light); color: var(--text-color); border: 1px solid var(--border-color); padding: 6px 12px; text-align: center; cursor: pointer; transition: all 0.2s ease; font-size: 13px; border-radius: 4px; display: inline-block; }
         .telemetry-info-button:hover, .telemetry-history-button:hover, .telemetry-stats-button:hover, .telemetry-settings-button:hover, .telemetry-download-button:hover { background-color: var(--panel-hover-bg); color: var(--text-color); }
@@ -3975,14 +5220,426 @@
         .api-tos-container td { color: var(--text-color); }
         .api-tos-container code { background: var(--background-light); padding: 2px 4px; border-radius: 3px; font-family: monospace; }
         .color-1 { background-color: #DC143C; } .color-2 { background-color: #4682B4; } .color-3 { background-color: #32CD32; } .color-4 { background-color: #FFD700; } .color-5 { background-color: #FF8C00; } .color-6 { background-color: #9932CC; } .color-7 { background-color: #00CED1; } .color-8 { background-color: #FF1493; } .color-9 { background-color: #8B4513; } .color-10 { background-color: #7FFF00; } .color-11 { background-color: #00FA9A; } .color-12 { background-color: #D2691E; } .color-13 { background-color: #6495ED; } .color-14 { background-color: #F08080; } .color-15 { background-color: #20B2AA; } .color-16 { background-color: #B0C4DE; } .color-17 { background-color: #DA70D6; } .color-18 { background-color: #FF6347; } .color-19 { background-color: #40E0D0; } .color-20 { background-color: #C71585; } .color-21 { background-color: #6A5ACD; } .color-22 { background-color: #FA8072; } .color-default { background-color: #666; }
-        @media (max-width: 768px) { .custom-driver-item { padding: 5px; } .driver-info-row { margin-bottom: 4px; } .driver-name { min-width: 80px; } .driver-telemetry-display { font-size: 0.8em; min-width: 60px; margin-left: 5px; } .driver-telemetry-display .telemetry-column { min-width: 70px; } .driver-progress-bars { margin: 3px -5px -5px; } .custom-driver-item.map-selected .driver-progress-bars { margin-left: -2px; } .driver-details { font-size: 0.85em; } #custom-driver-list-container { max-height: 350px; } .telemetry-download-button, .telemetry-info-button, .telemetry-history-button, .telemetry-stats-button, .telemetry-settings-button { font-size: 12px; padding: 5px 10px; } .settings-popup-content, .stats-panel-content, .history-panel-content, .info-panel-content, .download-popup-content { width: 95%; padding: 15px; } .settings-title, .stats-title, .history-title, .info-title, .download-title { font-size: 18px; } .settings-btn { padding: 8px 12px; font-size: 14px; } .custom-driver-item.details-visible .driver-details { max-height: 500px; } .driver-metrics-grid, .driver-api-grid { grid-template-columns: 1fr 1fr; } .driver-status-wrap { margin-left: 0; align-items: flex-start; min-width: 0; } .stats-content table { font-size: 0.9em; } .stats-content th, .stats-content td { padding: 4px 6px; } .history-content table { font-size: 0.9em; } .history-content th, .history-content td { padding: 4px 6px; } }
-        @media (max-width: 480px) { .driver-name { min-width: 60px; } .driver-telemetry-display { min-width: 55px; font-size: 0.75em; } .driver-metrics-grid, .driver-api-grid { grid-template-columns: 1fr 1fr; } .driver-meta-row { grid-template-columns: 1fr; row-gap: 2px; } .stats-content table { font-size: 0.85em; } .stats-content th, .stats-content td { padding: 3px 4px; } .history-content table { font-size: 0.85em; } .history-content th, .history-content td { padding: 3px 4px; } .settings-buttons { flex-direction: column; } .settings-data-buttons { flex-direction: column; } }
-        @media (max-width: 400px) { .driver-metrics-grid, .driver-api-grid { grid-template-columns: 1fr; } }
+        @media (max-width: 768px) { .custom-driver-item { padding: 5px; } .driver-info-row { margin-bottom: 4px; } .driver-name { min-width: 80px; } .driver-telemetry-display { font-size: 0.8em; min-width: 60px; margin-left: 5px; } .driver-telemetry-display .telemetry-column { min-width: 70px; } .driver-progress-bars { margin: 3px -5px -5px; } .custom-driver-item.map-selected .driver-progress-bars { margin-left: -2px; } #custom-driver-list-container { max-height: 350px; } .telemetry-download-button, .telemetry-info-button, .telemetry-history-button, .telemetry-stats-button, .telemetry-settings-button { font-size: 12px; padding: 5px 10px; } .settings-popup-content, .stats-panel-content, .history-panel-content, .info-panel-content, .download-popup-content { width: 95%; padding: 15px; } .settings-title, .stats-title, .history-title, .info-title, .download-title { font-size: 18px; } .settings-btn { padding: 8px 12px; font-size: 14px; } .stats-content table { font-size: 0.9em; } .stats-content th, .stats-content td { padding: 4px 6px; } .history-content table { font-size: 0.9em; } .history-content th, .history-content td { padding: 4px 6px; } }
+        @media (max-width: 480px) { .driver-name { min-width: 60px; } .driver-telemetry-display { min-width: 55px; font-size: 0.75em; } .stats-content table { font-size: 0.85em; } .stats-content th, .stats-content td { padding: 3px 4px; } .history-content table { font-size: 0.85em; } .history-content th, .history-content td { padding: 3px 4px; } .settings-buttons { flex-direction: column; } .settings-data-buttons { flex-direction: column; } }
     `;
 
-    function toggleDetails(event) { const driverItem = event.target.closest('.custom-driver-item'); if (!driverItem || State.isUpdating) return; const detailsToggle = event.target.closest('.driver-details-toggle'); if (!detailsToggle) { if (!event.target.closest('.driver-details') && event.target.tagName !== 'A') RaceManager.selectDriverOnMap(driverItem.dataset.originalId); return; } const driverId = driverItem.dataset.userId; const isOpening = !driverItem.classList.contains('details-visible'); driverItem.classList.toggle('details-visible'); const position = Array.from(driverItem.parentNode.children).indexOf(driverItem) + 1; const driverData = RaceManager.parseDriverData(document.getElementById(driverItem.dataset.originalId)); if (driverData) { RaceManager.updateDriverElement(driverItem, driverData, position); } if (isOpening && Config.get('fetchApiStatsOnClick') && driverId && !driverItem.hasAttribute('data-stats-loaded') && !APIManager.isFetching.has(driverId)) { setTimeout(() => APIManager.fetchAndDisplayRacingStats(driverItem, driverId), 50); } }
+    // v4 visual layer: scoped to the userscript so Torn's own UI is unaffected.
+    const RTT_V4_STYLES = `
+      #custom-driver-list-container {
+        border: 1px solid #35414e; border-radius: 12px; background: #141b23;
+        scrollbar-color: #526576 #141b23; box-shadow: 0 6px 18px rgba(0,0,0,.18);
+      }
+      #custom-driver-list-container .custom-driver-item {
+        border-bottom-color: rgba(189,202,219,.13); padding: 9px 10px;
+        transition: background-color .14s ease;
+      }
+      #custom-driver-list-container .custom-driver-item:focus-visible {
+        outline: 2px solid #8ed8ff; outline-offset: -3px;
+      }
+      #custom-driver-list-container .custom-driver-item.map-selected {
+        padding-left: 7px; background: rgba(93,165,210,.15); border-left-color: #6ab9ed;
+      }
+      #custom-driver-list-container .driver-details-toggle {
+        width: 38px; height: 38px; border-radius: 10px; margin-left: 8px;
+        border: 1px solid rgba(182,202,222,.32); color: #ddf0ff;
+        background: rgba(162,203,234,.08); font-size: 17px; font-weight: 600;
+      }
+      #custom-driver-list-container .driver-details-toggle:focus-visible,
+      #custom-driver-list-container .driver-details-toggle:hover {
+        border-color: #7abfec; background: rgba(110,185,234,.18);
+      }
+      #custom-driver-list-container .driver-name { color: #f1f5f9; }
+      #custom-driver-list-container .driver-name .self-tag { color: #86cfb4; }
+      #custom-driver-list-container .driver-progress-track { height: 3px; }
+      #telemetryControlsContainer {
+        display: flex; align-items: center; gap: 6px; flex-wrap: nowrap;
+        max-width: 100%; overflow-x: auto; overscroll-behavior-x: contain;
+        -webkit-overflow-scrolling: touch; scrollbar-width: thin; padding: 4px 0 8px;
+      }
+      #telemetryControlsContainer > button {
+        white-space: nowrap; flex: 0 0 auto; min-height: 38px;
+        border-radius: 9px; font-weight: 600;
+      }
+      body.rtt-inspector-open { overflow: hidden !important; }
+      .rtt-inspector-backdrop {
+        position: fixed; inset: 0; z-index: 2147483000;
+        display: flex; align-items: flex-end; justify-content: center;
+        background: rgba(5, 9, 14, .74); color: #eef4f9;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+      }
+      .rtt-inspector-backdrop[hidden] { display: none !important; }
+      .rtt-inspector-panel {
+        display: flex; flex-direction: column; width: 100%; height: min(83dvh, 760px);
+        max-height: calc(100dvh - 12px); background: #151d26;
+        border: 1px solid #344453; border-bottom: 0;
+        border-radius: 20px 20px 0 0; box-sizing: border-box;
+        box-shadow: 0 -16px 60px rgba(0,0,0,.45); overflow: hidden;
+      }
+      .rtt-inspector-panel * { box-sizing: border-box; }
+      .rtt-inspector-grip { width: 34px; height: 4px; flex: 0 0 auto; border-radius: 4px;
+        background: #536473; margin: 9px auto 0; }
+      .rtt-inspector-header { display: flex; justify-content: space-between; gap: 15px;
+        align-items: flex-start; padding: 14px 20px 16px; border-bottom: 1px solid #2c3945; }
+      .rtt-inspector-identity { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 4px; }
+      .rtt-inspector-eyebrow { display: block !important; position: static !important; height: auto !important;
+        line-height: 1.35 !important; margin: 0 !important; padding: 0 !important;
+        color: #83a8bd !important; font-size: 10px !important; letter-spacing: .13em; font-weight: 750; }
+      .rtt-inspector-name { display: block !important; position: static !important; height: auto !important;
+        min-height: 0 !important; font-weight: 760 !important; color: #f4f8fc !important;
+        font-size: clamp(20px, 5vw, 26px) !important; line-height: 1.25 !important;
+        margin: 0 !important; padding: 0 !important; border: 0 !important; background: none !important;
+        overflow-wrap: anywhere; }
+      .rtt-inspector-subtitle { display: block !important; position: static !important; height: auto !important;
+        color: #9fb0be !important; font-size: 12px !important; margin: 0 !important; padding: 0 !important;
+        line-height: 1.45 !important; }
+      .rtt-inspector-close { color: #cbd9e4; font-size: 29px; line-height: 1; background: #273340;
+        border: 1px solid #425464; border-radius: 12px; width: 42px; height: 42px;
+        cursor: pointer; flex-shrink: 0; }
+      .rtt-inspector-close:hover, .rtt-inspector-close:focus-visible { background: #374c5c; outline: 2px solid #8dd0f9; }
+      .rtt-inspector-tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px;
+        padding: 9px 14px 0; border-bottom: 1px solid #32404c; }
+      .rtt-inspector-tab { cursor: pointer; border: 0; border-bottom: 3px solid transparent;
+        background: transparent; color: #9aaebf; padding: 12px 8px 11px; font: inherit;
+        font-size: 13px; font-weight: 650; border-radius: 7px 7px 0 0; }
+      .rtt-inspector-tab[aria-selected="true"] { color: #def3ff; border-color: #76c4f5; background: #21303d; }
+      .rtt-inspector-tab:focus-visible { outline: 2px solid #8dd0f9; outline-offset: -2px; }
+      .rtt-inspector-content { flex: 1; min-height: 0; overflow-y: auto; padding: 18px 18px 22px;
+        overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+      .rtt-inspector-section { display: flex; flex-direction: column; gap: 15px; }
+      .rtt-inspector-section-title { display: block !important; position: static !important; height: auto !important;
+        line-height: 1.3 !important; margin: 0 !important; padding: 0 !important; border: 0 !important;
+        background: none !important; font-size: 15px !important; font-weight: 700 !important; color: #e8f2fa !important; }
+      .rtt-inspector-summary { padding: 17px; border: 1px solid #355468; border-radius: 13px;
+        background: linear-gradient(120deg, #223b4b, #1b2a35); }
+      .rtt-inspector-summary-overline { color: #8fb9d1; font-size: 10px; letter-spacing: .14em; font-weight: 700; }
+      .rtt-inspector-summary-title { margin-top: 6px; font-size: 21px; font-weight: 700; color: #eef7fd; }
+      .rtt-inspector-summary-sub { color: #afc3d1; margin-top: 4px; font-size: 12px; }
+      .rtt-inspector-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+      .rtt-inspector-metric { min-height: 94px; padding: 14px 13px; border: 1px solid #354451;
+        border-radius: 12px; background: #1b2630; display: flex; flex-direction: column; gap: 7px; }
+      .rtt-inspector-metric.is-prominent { background: #203443; border-color: #416379; }
+      .rtt-inspector-metric-label { color: #a6b9c9; letter-spacing: .025em; font-size: 11px; line-height: 1.3; }
+      .rtt-inspector-metric-value { color: #f5f9fc; font-variant-numeric: tabular-nums;
+        font-size: clamp(18px, 4.7vw, 25px); font-weight: 750; line-height: 1.1; overflow-wrap: anywhere; }
+      .rtt-inspector-metric-note { color: #8c9eac; font-size: 10px; }
+      .rtt-inspector-progress { display: grid; gap: 7px; }
+      .rtt-inspector-progress-heading { display: flex; justify-content: space-between;
+        color: #abbac8; font-size: 12px; font-variant-numeric: tabular-nums; }
+      .rtt-inspector-progress-heading strong { color: #e9f3fa; }
+      .rtt-inspector-progress-track { height: 7px; border-radius: 12px; background: #303e4b; overflow: hidden; }
+      .rtt-inspector-progress-fill { background: #72c4f0; border-radius: 12px; height: 100%; transition: width .3s ease; }
+      .rtt-inspector-info { margin: 0; font-size: 12px; color: #a8bac7; line-height: 1.6; }
+      .rtt-inspector-profile, .rtt-inspector-retry { align-self: flex-start;
+        padding: 10px 14px; background: #223647; border: 1px solid #49758d; border-radius: 8px;
+        color: #a6dfff; font-size: 13px; text-decoration: none; cursor: pointer; }
+      .rtt-inspector-footer { flex: 0 0 auto; border-top: 1px solid #2f3e4c;
+        color: #8597a6; font-size: 10px; line-height: 1.3;
+        padding: 11px 18px max(11px, env(safe-area-inset-bottom, 0px)); }
+      /* The other large panels reuse the same responsive surface, not a 95vw overflow box. */
+      .settings-popup, .stats-panel, .history-panel, .info-panel, .download-popup {
+        z-index: 2147482000; box-sizing: border-box; padding: 10px;
+      }
+      .settings-popup-content, .stats-panel-content, .history-panel-content,
+      .info-panel-content, .download-popup-content {
+        box-sizing: border-box; border-radius: 15px; width: min(100%, 860px);
+        max-width: 860px; height: auto; max-height: min(90dvh, 940px); border-color: #374553;
+        background: #161e27; box-shadow: 0 22px 70px rgba(0,0,0,.5);
+      }
+      .settings-popup-content { max-width: 600px; }
+      .stats-panel-content, .history-panel-content { max-width: 930px; }
+      .stats-content table, .history-content table { min-width: 560px; }
+      .stats-content, .history-content { overflow-x: auto; }
+      .stats-summary-card, .history-summary-card { border-radius: 11px; padding: 13px; }
+      .settings-item input, .settings-item select { min-height: 40px; }
+      .stats-close, .history-close, .settings-close, .download-close, .info-close { min-width: 38px; min-height: 38px; }
+      @media (min-width: 850px) {
+        .rtt-inspector-backdrop { align-items: stretch; justify-content: flex-end; }
+        .rtt-inspector-panel { height: 100dvh; max-height: 100dvh; width: min(460px, 42vw);
+          border-radius: 18px 0 0 18px; border: 0; border-left: 1px solid #3b5363; }
+        .rtt-inspector-grip { display: none; }
+        .rtt-inspector-header { padding-top: 24px; }
+      }
+      @media (max-width: 600px) {
+        .rtt-inspector-panel { height: min(83dvh, 780px); }
+        .rtt-inspector-header { padding: 12px 16px 14px; }
+        .rtt-inspector-content { padding: 16px 14px; }
+        .settings-popup, .stats-panel, .history-panel, .info-panel, .download-popup {
+          padding: 0; align-items: flex-end;
+        }
+        .settings-popup-content, .stats-panel-content, .history-panel-content,
+        .info-panel-content, .download-popup-content {
+          width: 100%; height: auto; max-height: 94dvh;
+          flex: 0 1 auto; min-height: 0;
+          border-radius: 18px 18px 0 0; border-bottom: none; padding: 18px 14px;
+        }
+        .history-summary-cards, .stats-summary-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        #custom-driver-list-container { max-height: none; }
+        #custom-driver-list-container .driver-name { min-width: 0; }
+        #custom-driver-list-container .driver-details-toggle { width: 38px; height: 38px; }
+      }
+      /* Touch layout: six collapsed racers fit without scrolling the leaderboard. */
+      @media (hover: none), (pointer: coarse) {
+        #custom-driver-list-container {
+          max-height: none !important;
+          overflow-y: visible !important;
+          -webkit-overflow-scrolling: auto;
+        }
+        #custom-driver-list-container .custom-driver-item {
+          padding: 3px 8px 5px;
+          min-height: 48px;
+          transition: none;
+        }
+        #custom-driver-list-container .custom-driver-item.map-selected { padding-left: 5px; }
+        #custom-driver-list-container .driver-info-row { min-height: 38px; }
+        #custom-driver-list-container .driver-details-toggle { width: 34px; height: 34px; }
+        #custom-driver-list-container .driver-progress-bars { margin-top: 2px; margin-bottom: -5px; }
+        #custom-driver-list-container .custom-driver-item:hover,
+        #custom-driver-list-container .custom-driver-item.map-selected:hover {
+          filter: none;
+          background-color: transparent;
+        }
+        #custom-driver-list-container .custom-driver-item.map-selected:hover {
+          background-color: rgba(93,165,210,.15);
+        }
+      }
+      /* iOS Safari can retain :hover after a tap or while scrolling. Only enable
+         hover styling on devices with an actual hover-capable fine pointer. */
+      @media (hover: none) {
+        .telemetry-info-button:hover, .telemetry-history-button:hover,
+        .telemetry-stats-button:hover, .telemetry-settings-button:hover,
+        .telemetry-download-button:hover, .driver-details-toggle:hover,
+        .rtt-inspector-close:hover, .settings-close:hover, .stats-close:hover,
+        .history-close:hover, .info-close:hover, .download-close:hover,
+        .history-clear-button:hover, .download-content button:hover,
+        .download-content button.primary:hover, .history-sort-btn:hover,
+        .stats-sort-btn:hover, .settings-btn:hover, .settings-btn.primary:hover,
+        .settings-btn.danger:hover {
+          filter: none;
+          box-shadow: none;
+          text-decoration: none;
+          background-color: var(--background-light);
+        }
+        .settings-content a:hover, .stats-content a:hover,
+        .history-content a:hover, .info-content a:hover,
+        .download-content a:hover, .api-tos-container a:hover {
+          text-decoration: none;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .rtt-inspector-panel *, #custom-driver-list-container * { transition-duration: .01ms !important; animation: none !important; }
+      }
+    `;
+
+    // Beta 2: coherent responsive layout, with no selectors targeting Torn's global UI.
+    const RTT_BETA2_STYLES = `
+      .rtt-inspector-backdrop { background: rgba(6, 10, 15, .48); }
+      .rtt-inspector-panel {
+        height: min(67dvh, 640px); background: #171d24;
+        border-color: #384553; border-radius: 18px 18px 0 0;
+        transition: height 180ms ease;
+      }
+      .rtt-inspector-panel.is-expanded { height: min(95dvh, 900px); }
+      .rtt-inspector-header { align-items: center; padding: 12px 16px 12px; gap: 10px; }
+      .rtt-inspector-identity { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
+      .rtt-inspector-eyebrow { display: block !important; position: static !important; height: auto !important;
+        line-height: 1.35 !important; margin: 0 !important; font-size: 10px !important;
+        letter-spacing: .1em; color: #91aab9 !important; }
+      .rtt-inspector-name { display: block !important; position: static !important; height: auto !important;
+        margin: 0 !important; padding: 0 !important; font-size: 20px !important;
+        line-height: 1.25 !important; color: #f4f8fc !important; }
+      .rtt-inspector-subtitle { display: block !important; position: static !important; height: auto !important;
+        margin: 0 !important; font-size: 12px !important; line-height: 1.4 !important; color: #9fb0be !important; }
+      .rtt-inspector-actions { display: flex; align-items: center; gap: 7px; flex: 0 0 auto; }
+      .rtt-inspector-expand { background: #27323d; border: 1px solid #475664; border-radius: 8px;
+        color: #dbe8f1; min-height: 36px; padding: 0 10px; font-size: 12px; cursor: pointer; }
+      .rtt-inspector-close { width: 37px; height: 37px; border-radius: 9px; font-size: 25px; }
+      .rtt-inspector-tabs { padding: 3px 12px 0; gap: 3px; }
+      .rtt-inspector-tab { padding: 9px 5px; min-height: 40px; }
+      .rtt-inspector-content { padding: 12px 14px 16px; }
+      .rtt-inspector-section { gap: 10px; }
+      .rtt-inspector-summary { padding: 12px 14px; border-radius: 10px; background: #1d303b; }
+      .rtt-inspector-summary-overline { font-size: 9px; }
+      .rtt-inspector-summary-title { font-size: 17px; margin-top: 4px; }
+      .rtt-inspector-summary-sub { font-size: 11px; margin-top: 3px; }
+      .rtt-inspector-grid { gap: 7px; }
+      .rtt-inspector-metric { min-height: 68px; padding: 10px 12px; border-radius: 9px; gap: 5px; }
+      .rtt-inspector-metric-label { font-size: 10px; }
+      .rtt-inspector-metric-value { font-size: clamp(17px, 4.4vw, 23px); }
+      .rtt-inspector-metric-note { font-size: 9px; }
+      .rtt-inspector-footer { padding: 7px 14px max(9px, env(safe-area-inset-bottom, 0px)); font-size: 9px; }
+      .rtt-panel-workspace { min-width: 0; }
+      .rtt-panel-navigation { display: flex; align-items: stretch; position: sticky; top: 0; z-index: 3;
+        gap: 4px; padding: 4px; background: #202933; border: 1px solid #364653;
+        border-radius: 11px; margin-bottom: 14px; }
+      .rtt-panel-nav-button { flex: 1; min-width: 0; min-height: 40px; border: 0; border-radius: 8px;
+        padding: 8px 8px; background: transparent; color: #abbecb; cursor: pointer;
+        font: 600 12px/1.2 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; white-space: nowrap; }
+      .rtt-panel-nav-button[aria-selected="true"] { background: #344c5d; color: #f0f8fd;
+        box-shadow: inset 0 0 0 1px #4a728b; }
+      .rtt-panel-nav-button:focus-visible { outline: 2px solid #8cd5ff; outline-offset: -2px; }
+      .rtt-panel-section[hidden] { display: none !important; }
+      .rtt-panel-section { min-width: 0; }
+      .settings-popup-content, .stats-panel-content, .history-panel-content,
+      .info-panel-content, .download-popup-content {
+        background: #171e26; color: #e7eff6; overflow: hidden; display: flex; flex-direction: column;
+        font: 13px/1.45 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      }
+      .settings-title, .stats-title, .history-title, .info-title, .download-title {
+        position: relative; flex: 0 0 auto; padding: 2px 0 12px; margin: 0;
+        font-size: 17px; color: #e5f1fb; letter-spacing: -.015em;
+      }
+      .settings-content, .stats-content, .history-content, .info-content, .download-content {
+        min-height: 0; flex: 1 1 auto; overflow-y: auto; overflow-x: hidden;
+        padding: 12px 1px 18px; -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+      }
+      .settings-item { background: #202a35; border: 1px solid #344453; border-radius: 10px;
+        padding: 11px 12px; margin: 0 0 9px; }
+      .settings-item label:not(.switch) { font-size: 12px; font-weight: 600; }
+      .settings-item small { line-height: 1.45; }
+      .settings-content .toggle-container { min-height: 30px; }
+      .settings-content .telemetry-options-group { border: 0; background: transparent; padding: 0; }
+      .settings-content .rtt-settings-group { display: grid; gap: 1px; }
+      .rtt-panel-footer-actions { flex: 0 0 auto; display: flex; flex-wrap: wrap;
+        gap: 8px; padding: 12px 0 0; border-top: 1px solid #344453; margin-top: 0; }
+      .rtt-panel-footer-actions button { flex: 1; min-height: 41px; }
+      .settings-data-buttons { display: flex; gap: 8px; flex-wrap: wrap; }
+      .settings-data-buttons button { flex: 1; min-height: 38px; }
+      .stats-content h3, .history-content h3 { font-size: 15px; border-bottom: 0; color: #e5f0f8;
+        margin: 17px 0 10px; }
+      .stats-content h4 { font-size: 13px; }
+      .stats-summary-cards, .stats-delta-cards, .history-summary-cards {
+        grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+      .stats-summary-card, .history-summary-card { padding: 11px 12px; min-width: 0;
+        background: #202b36; border: 1px solid #354958; border-radius: 10px; }
+      .stats-summary-value, .history-summary-value { overflow-wrap: anywhere; font-size: 17px; }
+      .stats-summary-label, .history-summary-label { font-size: 10px; letter-spacing: .025em; line-height: 1.35; }
+      .stats-content table, .history-content table { width: 100%; min-width: 0; font-size: 12px; }
+      .stats-content th, .stats-content td, .history-content th, .history-content td {
+        padding: 8px 9px !important; border-color: #364654; vertical-align: middle; }
+      .stats-content td { padding: 8px 9px !important; }
+      .stats-content table th, .history-content table th { background: #283543; }
+      .stats-content .rtt-panel-section table, .history-content .rtt-panel-section table {
+        display: block; overflow-x: auto; -webkit-overflow-scrolling: touch;
+        max-width: 100%; border-radius: 9px; }
+      .stats-content .rtt-panel-section table tbody, .history-content .rtt-panel-section table tbody { white-space: nowrap; }
+      .history-race-timeline { gap: 8px; }
+      .history-race-item { border-radius: 10px; padding: 10px 11px; }
+      .info-content h3 { font-size: 14px; }
+      .rtt-info-notes { background: #202b36; border: 1px solid #354958;
+        border-radius: 10px; padding: 12px; margin-top: 16px; }
+      .rtt-info-notes summary { cursor: pointer; font-size: 13px; font-weight: 650; }
+      .rtt-info-notes li { margin: 9px 0; font-size: 12px; }
+      .api-tos-container table { display: block; overflow-x: auto; max-width: 100%; }
+      #telemetryControlsContainer { gap: 5px; }
+      #telemetryControlsContainer > button { min-height: 36px; border-radius: 8px; }
+      @media (min-width: 850px) {
+        .rtt-inspector-panel, .rtt-inspector-panel.is-expanded { height: 100dvh; }
+        .rtt-inspector-expand { display: none; }
+        .settings-popup-content, .stats-panel-content, .history-panel-content { padding: 20px 24px; }
+        .rtt-panel-navigation { max-width: 550px; }
+      }
+      @media (max-width: 600px) {
+        .rtt-inspector-panel { height: min(61dvh, 570px); }
+        .rtt-inspector-panel.is-expanded { height: min(94dvh, 900px); }
+        .rtt-inspector-grip { margin-top: 7px; }
+        .settings-popup-content, .stats-panel-content, .history-panel-content,
+        .info-panel-content, .download-popup-content {
+          padding: 13px 14px max(14px, env(safe-area-inset-bottom, 0px));
+          height: auto; max-height: 94dvh; border-radius: 17px 17px 0 0;
+        }
+        .rtt-panel-navigation { margin-bottom: 10px; }
+        .stats-content, .history-content { font-size: 12px; }
+        .history-race-main { gap: 4px; flex-wrap: wrap; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .rtt-inspector-panel { transition: none; }
+      }
+    `;
+
+    // Keep secondary actions visually subordinate to the live leaderboard.
+    GM_addStyle(`
+      #telemetryControlsContainer {
+        display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end;
+        gap: 0; margin: 0 0 2px; padding: 0; width: 100%; max-width: 100%; overflow: hidden;
+        background: transparent; border: 0; box-shadow: none;
+      }
+      #telemetryControlsContainer > :is(.telemetry-info-button, .telemetry-history-button,
+        .telemetry-stats-button, .telemetry-settings-button, .telemetry-download-button) {
+        flex: 1 1 0; min-width: 0; min-height: 34px; padding: 6px 2px; margin: 0; text-align: center;
+        border: 1px solid transparent; border-radius: 6px;
+        background: transparent; box-shadow: none; color: #9aafbd;
+        font: 500 11px/1.25 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        letter-spacing: 0; text-shadow: none; transition: none;
+        -webkit-tap-highlight-color: transparent;
+      }
+      #telemetryControlsContainer > .telemetry-settings-button {
+        margin-left: 0; border-left-color: transparent; border-radius: 6px;
+      }
+      #telemetryControlsContainer > :is(.telemetry-info-button, .telemetry-history-button,
+        .telemetry-stats-button, .telemetry-settings-button, .telemetry-download-button):focus-visible {
+        outline: 2px solid #83b9dc; outline-offset: 1px;
+      }
+      @media (hover: hover) and (pointer: fine) {
+        #telemetryControlsContainer > :is(.telemetry-info-button, .telemetry-history-button,
+          .telemetry-stats-button, .telemetry-settings-button, .telemetry-download-button):hover {
+          color: #e2eff8; background: #293744; border-color: #405260;
+        }
+      }
+      @media (hover: none), (pointer: coarse) {
+        #telemetryControlsContainer > :is(.telemetry-info-button, .telemetry-history-button,
+          .telemetry-stats-button, .telemetry-settings-button, .telemetry-download-button),
+        #telemetryControlsContainer > :is(.telemetry-info-button, .telemetry-history-button,
+          .telemetry-stats-button, .telemetry-settings-button, .telemetry-download-button):hover,
+        #telemetryControlsContainer > :is(.telemetry-info-button, .telemetry-history-button,
+          .telemetry-stats-button, .telemetry-settings-button, .telemetry-download-button):active {
+          color: #9aafbd; background: transparent; box-shadow: none;
+        }
+      }
+      @media (max-width: 480px) {
+        #telemetryControlsContainer { flex-wrap: nowrap; gap: 0; justify-content: stretch; }
+        #telemetryControlsContainer > :is(.telemetry-info-button, .telemetry-history-button,
+          .telemetry-stats-button, .telemetry-settings-button, .telemetry-download-button) {
+          flex: 1 1 0; min-width: 0; min-height: 34px; padding: 6px 2px; font-size: 11px;
+        }
+      }
+    `);
+
+// Beta 5: equal-width secondary navigation and no empty band above the leaderboard.
+    GM_addStyle(`
+      #telemetryControlsContainer {
+        box-sizing: border-box; width: 100%; margin-top: 0 !important;
+        margin-bottom: 2px !important; padding: 0 !important;
+        justify-content: stretch !important; align-items: stretch !important;
+        flex-wrap: nowrap !important; overflow: hidden !important;
+      }
+      #telemetryControlsContainer > button {
+        box-sizing: border-box; flex: 1 1 0 !important; min-width: 0 !important;
+        max-width: none !important; width: 0; text-align: center !important;
+      }
+      #telemetryControlsContainer + #custom-driver-list-container { margin-top: 0 !important; }
+      @media (hover: none), (pointer: coarse) {
+        #telemetryControlsContainer > button:hover { background: transparent !important; box-shadow: none !important; }
+      }
+    `);
+
+    function toggleDetails(event) {
+        const driverItem = event.target.closest('.custom-driver-item');
+        if (!driverItem || State.isUpdating) return;
+        if (event.target.closest('.driver-details-toggle')) {
+            event.preventDefault();
+            event.stopPropagation();
+            DriverInspector.open(driverItem.dataset.userId, driverItem.dataset.originalId, event.target.closest('button'));
+            return;
+        }
+        if (!event.target.closest('a')) RaceManager.selectDriverOnMap(driverItem.dataset.originalId);
+    }
 
     function cleanupScriptState(reason = "Unknown") {
+        LiveMapIntegration.disconnect();
+        RaceInfoIntegration.disconnect();
+        DriverInspector.close(false);
+        TabWorkspace.disconnect();
         if (State.observers.length > 0) { State.observers.forEach(obs => obs.disconnect()); State.observers = []; }
         document.querySelectorAll('.driver-telemetry-display').forEach(el => {
             if (el._animationRAF) cancelAnimationFrame(el._animationRAF);
@@ -3997,23 +5654,6 @@
         State.clearPopupsAndFullReset();
         State.isRaceViewActive = false;
         document.body.classList.remove('hide-original-leaderboard', 'telemetry-hidden');
-    }
-
-    async function purgeHistoryStorageIfNeeded() {
-        if (State.historyStoragePurged) {
-            return;
-        }
-        State.historyStoragePurged = true;
-
-        try {
-            GM_deleteValue('racingHistoryLog_v3.1.0');
-        } catch (e) { }
-
-        if (typeof HistoryStore !== 'undefined' && HistoryStore?.isSupported?.()) {
-            try {
-                await HistoryStore.clearEntries();
-            } catch (e) { }
-        }
     }
 
     async function initialize() {
@@ -4047,7 +5687,6 @@
                 Config.set('apiKey', '###PDA-APIKEY###');
                 Utils.showNotification('Torn PDA API key automatically configured.', 'success');
             }
-            await purgeHistoryStorageIfNeeded();
 
             State.originalLeaderboard = document.getElementById('leaderBoard');
             const originalScrollbarContainer = document.getElementById('drivers-scrollbar');
@@ -4070,9 +5709,20 @@
                 if (State.customUIContainer) { State.customUIContainer.removeEventListener('click', toggleDetails); }
                 else { State.customUIContainer = document.createElement('div'); State.customUIContainer.id = 'custom-driver-list-container'; parentContainer.insertBefore(State.customUIContainer, originalScrollbarContainer); }
                 State.customUIContainer.addEventListener('click', toggleDetails);
+                State.customUIContainer.addEventListener('keydown', event => {
+                    if (event.key !== 'Enter' && event.key !== ' ') return;
+                    if (event.target.closest('button, a')) return;
+                    const item = event.target.closest('.custom-driver-item');
+                    if (!item) return;
+                    event.preventDefault();
+                    RaceManager.selectDriverOnMap(item.dataset.originalId);
+                });
             }
 
             UI.initializeControls();
+            RaceInfoIntegration.install();
+            LiveMapIntegration.install();
+            TabWorkspace.install();
             State.currentRaceId = RaceManager.getRaceId();
             await RaceManager.updateTrackAndClassInfo();
             document.body.classList.toggle('hide-original-leaderboard', Config.get('hideOriginalList'));

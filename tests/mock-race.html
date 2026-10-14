@@ -1,0 +1,33 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Torn Racing Telemetry UI test</title>
+<style>html,body{margin:0;background:#0b1219;color:#dae4ec;font:14px system-ui} .shell{max-width:1000px;margin:auto;padding:12px}.map{height:185px;background:linear-gradient(135deg,#223546,#354e52);border-radius:9px;padding:15px;font-weight:700;box-sizing:border-box}.drivers-list{margin-top:18px}.title-black{padding:8px}.track-info{margin-top:12px}#drivers-scrollbar{background:#18242e} #leaderBoard{list-style:none;padding:0;margin:0}#leaderBoard li{padding:13px;border-bottom:1px solid #465461;display:flex;gap:16px;align-items:center}.car img{width:28px;height:20px}.color{width:6px;height:17px}.time{margin-left:auto}</style>
+<script>
+const store=new Map();function GM_getValue(key, def){return store.has(key)?store.get(key):def;}function GM_setValue(key,val){store.set(key,val)}function GM_deleteValue(key){store.delete(key)}function GM_addStyle(css){const style=document.createElement('style');style.textContent=css;document.head.append(style)}function GM_setClipboard(x){}
+window.topBannerInitData={user:{data:{userID:2782979}}};
+</script></head><body>
+<div class="shell">
+  <div class="map">TORN RACING — SIMULATED TRACK<div class="track-info" title="Uptown" data-length="3.4">Uptown · Class B</div></div>
+  <div id="racingupdates"><div class="drivers-list"><div class="title-black">5 laps · 4 drivers</div>
+    <div id="drivers-scrollbar"><ul id="leaderBoard">
+      <li id="lbr-2782979" data-id="81234-2782979"><span class="color color-3"></span><span class="name"><span>TheProgrammer</span></span><span class="car"><img title="Volt GT" src="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs="></span><span class="status-wrap"><div class="racing"></div></span><span class="time">23.5%</span></li>
+      <li id="lbr-4012936" data-id="81234-4012936"><span class="color color-1"></span><span class="name"><span>OtherDriver</span></span><span class="car"><img title="Hammerhead" src="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs="></span><span class="status-wrap"><div class="racing"></div></span><span class="time">19.3%</span></li>
+    </ul></div>
+  </div></div>
+</div>
+<script>document.querySelectorAll('#leaderBoard li').forEach(row=>row.addEventListener('click',()=>{document.querySelectorAll('#leaderBoard li').forEach(x=>x.classList.remove('selected'));row.classList.add('selected')}));</script>
+<script src="../tornracingtelemetry.js"></script>
+<script>
+window.__rttCheck={};
+setTimeout(()=>{
+ const button=document.querySelector('.driver-details-toggle');
+ window.__rttCheck.rows=document.querySelectorAll('.custom-driver-item').length;
+ if(button){button.click();window.__rttCheck.opened=!!document.querySelector('.rtt-inspector-backdrop');}
+ const tab=document.querySelector('.rtt-inspector-tab[data-tab="telemetry"]');
+ if(tab && location.search.includes('telemetry')) tab.click();
+ if(location.search.includes('career'))document.querySelector('.rtt-inspector-tab[data-tab="career"]')?.click();
+ window.__rttCheck.tabs=[...document.querySelectorAll('.rtt-inspector-tab')].map(b=>b.textContent);
+ window.__rttCheck.scroll=document.documentElement.scrollWidth;
+ window.__rttCheck.inner=document.body.clientWidth;
+ console.log('RTT_MOCK_RESULT '+JSON.stringify(window.__rttCheck));
+},800);
+</script>
+</body></html>
